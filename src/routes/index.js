@@ -6,6 +6,7 @@ const trendController = require('../controllers/trendController');
 const contentController = require('../controllers/contentController');
 const postController = require('../controllers/postController');
 const interactionController = require('../controllers/interactionController');
+const settingsController = require('../controllers/settingsController');
 
 // Health check
 router.get('/health', (req, res) => {
@@ -22,38 +23,42 @@ router.get('/health', (req, res) => {
 });
 
 // ===== TRENDS ROUTES =====
-router.get('/api/trends', trendController.getTrends);
-router.get('/api/trends/latest', trendController.getLatestTrend);
-router.get('/api/trends/:id', trendController.getTrendById);
-router.post('/api/trends/analyze', trendController.analyzeTrends);
-router.delete('/api/trends/:id', trendController.deleteTrend);
+router.get('/trends', trendController.getTrends);
+router.get('/trends/latest', trendController.getLatestTrend);
+router.get('/trends/:id', trendController.getTrendById);
+router.post('/trends/analyze', trendController.analyzeTrends);
+router.delete('/trends/:id', trendController.deleteTrend);
 
 // ===== CONTENT ROUTES =====
-router.get('/api/content', contentController.getContent);
-router.get('/api/content/:id', contentController.getContentById);
-router.post('/api/content/generate', contentController.generateContent);
+router.get('/content', contentController.getContent);
+router.get('/content/:id', contentController.getContentById);
+router.post('/content/generate', contentController.generateContent);
 
 // ===== POSTS ROUTES (WITH APPROVAL WORKFLOW) =====
 // Get posts
-router.get('/api/posts', postController.getPosts);
-router.get('/api/posts/pending', postController.getPendingPosts);
-router.get('/api/posts/statistics', postController.getStatistics);
-router.get('/api/posts/:id', postController.getPostById);
-router.get('/api/posts/:id/history', postController.getApprovalHistory);
+router.get('/posts', postController.getPosts);
+router.get('/posts/pending', postController.getPendingPosts);
+router.get('/posts/statistics', postController.getStatistics);
+router.get('/posts/:id', postController.getPostById);
+router.get('/posts/:id/history', postController.getApprovalHistory);
 
 // Approval actions
-router.put('/api/posts/:id/approve', postController.approvePost);
-router.put('/api/posts/:id/reject', postController.rejectPost);
-router.put('/api/posts/:id/edit', postController.editPost);
+router.put('/posts/:id/approve', postController.approvePost);
+router.put('/posts/:id/reject', postController.rejectPost);
+router.put('/posts/:id/edit', postController.editPost);
 
 // Delete
-router.delete('/api/posts/:id', postController.deletePost);
+router.delete('/posts/:id', postController.deletePost);
 
 // ===== INTERACTIONS ROUTES (COMMENTS & DMS) =====
-router.get('/api/interactions', interactionController.getInteractions);
-router.get('/api/interactions/statistics', interactionController.getStatistics);
-router.get('/api/interactions/:id', interactionController.getInteractionById);
-router.post('/api/interactions/webhook', interactionController.handleWebhook);
-router.delete('/api/interactions/:id', interactionController.deleteInteraction);
+router.get('/interactions', interactionController.getInteractions);
+router.get('/interactions/statistics', interactionController.getStatistics);
+router.get('/interactions/:id', interactionController.getInteractionById);
+router.post('/interactions/webhook', interactionController.handleWebhook);
+router.delete('/interactions/:id', interactionController.deleteInteraction);
+
+// ===== SETTINGS ROUTES =====
+router.get('/settings', settingsController.getSettings);
+router.put('/settings', settingsController.updateSettings);
 
 module.exports = router;

@@ -26,9 +26,21 @@ const analytics = require('./cron/analytics');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust proxy (required for Vercel/serverless environments)
+app.set('trust proxy', 1);
+
 // Middleware
 app.use(helmet());
-app.use(cors());
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'https://doors22-dashboard.vercel.app',
+    /https:\/\/doors22-dashboard-.*\.vercel\.app$/
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('combined'));
@@ -36,6 +48,19 @@ app.use(rateLimiter);
 
 // Initialize Firebase
 initializeFirebase();
+
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    name: 'Doors22 AI Automation Backend',
+    version: '1.0.0',
+    status: 'online',
+    endpoints: {
+      health: '/health',
+      api: '/api/*'
+    }
+  });
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
