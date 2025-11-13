@@ -3,6 +3,7 @@
 .env.local
 .env.development
 .env.production
+.env.production.local
 
 # Firebase Service Account
 firebase-service-account.json

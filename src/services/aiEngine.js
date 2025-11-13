@@ -1,6 +1,6 @@
 /**
  * AI Engine Service
- * Handles all AI-powered operations using OpenAI GPT-4
+ * Handles all AI-powered operations using OpenAI GPT-4o-mini
  * - Trend analysis (images + videos/reels)
  * - Caption generation (format-specific)
  * - Hashtag generation
@@ -55,7 +55,7 @@ Return a JSON object with this structure:
 Provide actionable insights for creating engaging content.`;
 
       const response = await openai.chat.completions.create({
-        model: 'gpt-4',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -76,8 +76,14 @@ Provide actionable insights for creating engaging content.`;
 
       return trends;
     } catch (error) {
-      logger.error('Error analyzing trends:', error.message);
-      throw new Error(`Trend analysis failed: ${error.message}`);
+      logger.error('Error analyzing trends:', {
+        message: error.message,
+        code: error.code,
+        type: error.type,
+        status: error.status,
+        stack: error.stack
+      });
+      throw new Error(`Trend analysis failed: ${error.message || 'Unknown error'}`);
     }
   }
 
@@ -93,11 +99,12 @@ Provide actionable insights for creating engaging content.`;
     try {
       logger.info(`Generating caption for ${contentData.type}...`);
 
-      const { type, description, trendData } = contentData;
+      const { type, description, trendData, concept } = contentData;
+      const contentDescription = description || concept || 'Glass doors and partitions installation';
 
       const prompt = `Create an engaging ${type === 'video' ? 'reel/video' : 'image'} caption for Instagram and Facebook for Doors22, a glass doors and partitions company.
 
-Content: ${description}
+Content: ${contentDescription}
 
 Requirements:
 - ${type === 'video' ? '40-60 characters' : '120-150 characters'} main caption (engaging hook)
@@ -118,18 +125,13 @@ Trending context:
 
 Return JSON:
 {
-  "caption": "Main engaging caption text",
-  "hashtags": ["#GlassPartitions", "#OfficeDesign", ...], (8-12 hashtags)
-  "cta": {
-    "text": "Get your free quote",
-    "url": "https://doors22.com/price/",
-    "phone": "(305) 394-9922"
-  },
-  "fullPost": "Complete formatted post with caption + CTA + hashtags"
+  "text": "Main engaging caption text (the actual caption to post)",
+  "hashtags": ["#GlassPartitions", "#OfficeDesign", ...], (8-12 diverse hashtags, vary each time)
+  "cta": "Call-to-action text like 'Get your free quote at doors22.com/price or call (305) 394-9922'"
 }`;
 
       const response = await openai.chat.completions.create({
-        model: 'gpt-4',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -169,47 +171,39 @@ Return JSON:
 
       const { type, trendData, concept } = options;
 
-      const prompt = `Create a detailed Midjourney prompt for ${type === 'video' ? 'a video/reel' : 'an image'} showcasing glass doors or partitions for Doors22.
+      const prompt = `Create a detailed Midjourney prompt for a high-quality professional photograph showcasing glass doors or partitions for Doors22.
 
 ${concept ? `Specific concept: ${concept}` : ''}
 
-Trending styles: ${type === 'video'
-  ? trendData?.videoPostStyles?.join(', ') || 'Smooth transitions, installation timelapses'
-  : trendData?.imagePostStyles?.join(', ') || 'Professional photography, before/after'
-}
+Trending styles: ${trendData?.imagePostStyles?.join(', ') || 'Professional photography, before/after, modern office spaces'}
 
-Requirements for ${type}:
-${type === 'video' ? `
-- Motion/animation elements (sliding, opening, transitions)
-- Professional commercial space
-- Smooth, elegant movement
-- Use --video flag
-- Aspect ratio: 9:16 (vertical reel format)
-` : `
+IMPORTANT: This prompt is for generating a STATIC IMAGE (professional photograph).
+${type === 'video' ? 'Note: This image will later be used as a base frame for video generation, but the prompt itself should describe a static photograph, NOT a video or motion.' : ''}
+
+Requirements:
 - High-quality professional photography style
 - Modern commercial office or residential space
 - Natural lighting emphasis
 - Clean, minimalist aesthetic
-- Aspect ratio: 4:5 (Instagram feed optimized)
-`}
+- Professional composition with glass doors/partitions as the focal point
+- NO motion, animation, or video-related descriptions
+- Aspect ratio: 4:5 (${type === 'video' ? 'will be adjusted for video later' : 'Instagram feed optimized'})
 
 Return JSON:
 {
-  "prompt": "Complete Midjourney prompt with all parameters",
+  "prompt": "Complete Midjourney prompt with all parameters (for a STATIC photograph, no video/motion language)",
   "concept": "Brief description of the concept",
   "style": "modern-professional|elegant-minimalist|industrial-chic",
   "parameters": {
-    "ar": "${type === 'video' ? '9:16' : '4:5'}",
-    ${type === 'video' ? '"video": true,' : ''}
+    "ar": "4:5",
     "version": "6",
     "style": "raw"
   },
-  "expectedDuration": ${type === 'video' ? '3-5' : 'N/A'},
   "tags": ["keyword1", "keyword2", ...]
 }`;
 
       const response = await openai.chat.completions.create({
-        model: 'gpt-4',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -281,7 +275,7 @@ Return JSON:
 }`;
 
       const response = await openai.chat.completions.create({
-        model: 'gpt-4',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -346,7 +340,7 @@ Return JSON:
 }`;
 
       const response = await openai.chat.completions.create({
-        model: 'gpt-4',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',

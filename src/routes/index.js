@@ -8,6 +8,9 @@ const postController = require('../controllers/postController');
 const interactionController = require('../controllers/interactionController');
 const settingsController = require('../controllers/settingsController');
 
+// Import test routes
+const testRoutes = require('./test');
+
 // Health check
 router.get('/health', (req, res) => {
   res.json({
@@ -21,6 +24,9 @@ router.get('/health', (req, res) => {
     }
   });
 });
+
+// Test routes
+router.use('/test', testRoutes);
 
 // ===== TRENDS ROUTES =====
 router.get('/trends', trendController.getTrends);

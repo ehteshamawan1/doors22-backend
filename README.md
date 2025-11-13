@@ -16,7 +16,7 @@ Backend automation engine that powers the Doors22 AI social media system. Handle
 
 - **Daily Trend Analysis** - AI-powered market research
 - **Content Generation** - Midjourney image creation
-- **Caption Generator** - GPT-4 powered captions & hashtags
+- **Caption Generator** - GPT-4o-mini powered captions & hashtags
 - **Automated Posting** - Instagram & Facebook scheduling
 - **Smart Interactions** - AI responses to comments & DMs
 - **Analytics** - Performance tracking and optimization

@@ -127,20 +127,20 @@ exports.generateContent = async (req, res) => {
     const contentType = type || contentConcept.type || 'image';
 
     // Generate Midjourney prompt
-    const midjourneyPrompt = await aiEngine.generateMidjourneyPrompt({
+    const midjourneyPromptData = await aiEngine.generateMidjourneyPrompt({
       type: contentType,
       trendData,
       concept: contentConcept
     });
 
-    logger.info(`Generated ${contentType} prompt:`, midjourneyPrompt);
+    logger.info(`Generated ${contentType} prompt:`, midjourneyPromptData);
 
     // Generate media with Midjourney
     logger.info(`Generating ${contentType} with Midjourney...`);
     const mediaResult = await midjourneyService.generate({
-      prompt: midjourneyPrompt,
+      prompt: midjourneyPromptData.prompt,
       type: contentType,
-      parameters: { ar: contentType === 'video' ? '9:16' : '4:5' }
+      parameters: midjourneyPromptData.parameters || { ar: contentType === 'video' ? '9:16' : '4:5' }
     });
 
     if (!mediaResult.success) {
@@ -150,41 +150,53 @@ exports.generateContent = async (req, res) => {
     // Upload to Cloudinary
     logger.info('Uploading to Cloudinary...');
     const uploadResult = await cloudinaryService.uploadMedia(
-      mediaResult.localPath,
-      contentType,
+      mediaResult.mediaBuffer,
       {
+        type: contentType,
         folder: `doors22/${new Date().toISOString().split('T')[0]}/${contentType}s`
       }
     );
 
     // Generate caption
     logger.info('Generating caption...');
-    const caption = await aiEngine.generateCaption({
-      type: contentType,
-      trendData,
-      concept: contentConcept
-    });
+    let caption;
+    try {
+      caption = await aiEngine.generateCaption({
+        type: contentType,
+        trendData,
+        concept: contentConcept,
+        description: midjourneyPromptData.prompt // Use the Midjourney prompt as context
+      });
+    } catch (error) {
+      logger.error('Error generating caption:', error.message);
+      caption = {
+        text: 'Professional glass door installation showcasing modern design.',
+        hashtags: ['#Doors22', '#GlassDoors', '#ModernDesign'],
+        cta: 'Contact us for your glass door needs!'
+      };
+    }
 
     // Store in Firebase
     const contentData = {
       type: contentType,
-      mediaUrl: uploadResult.secure_url,
-      thumbnailUrl: uploadResult.thumbnail_url || uploadResult.secure_url,
-      midjourneyPrompt: midjourneyPrompt,
-      caption: caption.text,
-      hashtags: caption.hashtags,
-      cta: caption.cta,
-      generatedAt: new Date().toISOString(),
-      status: 'generated',
-      cloudinaryPublicId: uploadResult.public_id,
+      mediaUrl: uploadResult.url,
+      thumbnailUrl: uploadResult.thumbnailUrl || uploadResult.url,
+      midjourneyPrompt: midjourneyPromptData.prompt,
+      midjourneyPromptFull: midjourneyPromptData,
+      caption: caption?.text || 'Professional glass door installation.',
+      hashtags: caption?.hashtags || ['#Doors22', '#GlassDoors'],
+      cta: caption?.cta || 'Contact us today!',
+      createdAt: new Date().toISOString(),
+      status: 'pending',
+      cloudinaryPublicId: uploadResult.publicId,
       format: uploadResult.format,
-      fileSize: uploadResult.bytes,
+      fileSize: uploadResult.fileSize,
       duration: uploadResult.duration || null,
       aspectRatio: contentType === 'video' ? '9:16' : '4:5',
       trendId: trendId || null
     };
 
-    const contentDoc = await db.collection('content').add(contentData);
+    const contentDoc = await db.collection('posts').add(contentData);
 
     logger.info(`Content generated successfully: ${contentDoc.id}`);
 
@@ -198,11 +210,16 @@ exports.generateContent = async (req, res) => {
       }
     });
   } catch (error) {
-    logger.error('Error generating content:', error);
+    logger.error('Error generating content:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack?.split('\n').slice(0, 3)
+    });
     res.status(500).json({
       success: false,
       error: 'Failed to generate content',
-      message: error.message
+      message: error.message,
+      details: error.code ? `Error code: ${error.code}` : undefined
     });
   }
 };

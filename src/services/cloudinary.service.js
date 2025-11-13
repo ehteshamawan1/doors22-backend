@@ -15,7 +15,7 @@ const stream = require('stream');
 
 class CloudinaryService {
   constructor() {
-    this.cloudName = process.env.CLOUDINARY_CLOUD_NAME;
+    this.cloudName = cloudinary.config().cloud_name;
     this.folder = 'doors22'; // Base folder for all uploads
   }
 
@@ -99,17 +99,14 @@ class CloudinaryService {
           {
             folder: folder,
             public_id: filename || postId || `video_${Date.now()}`,
-            resource_type: 'video',
-            format: 'mp4',
+            resource_type: 'auto',
             transformation: [
               {
                 width: 1080,
                 height: 1920,
                 crop: 'fill',
                 gravity: 'center',
-                quality: 'auto:good',
-                video_codec: 'h264',
-                audio_codec: 'aac'
+                quality: 'auto:good'
               }
             ],
             eager: [

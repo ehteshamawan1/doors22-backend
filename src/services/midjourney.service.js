@@ -60,19 +60,15 @@ class MidjourneyService {
         sentAt: new Date().toISOString()
       };
     } catch (error) {
-      logger.error('Error sending prompt to Midjourney:', error.message);
+      logger.error('Error sending prompt to Midjourney:', {
+        message: error.message,
+        code: error.code,
+        url: this.discordBotUrl
+      });
 
-      // If Discord bot is not running, return mock data for development
+      // If Discord bot is not running, throw clear error
       if (error.code === 'ECONNREFUSED') {
-        logger.warn('Discord bot not reachable, returning mock request data');
-        return {
-          requestId: `mock_${Date.now()}`,
-          prompt: this.buildMidjourneyCommand(promptData.prompt, promptData.parameters, promptData.type),
-          type: promptData.type,
-          status: 'pending',
-          sentAt: new Date().toISOString(),
-          mock: true
-        };
+        throw new Error(`Discord bot is not reachable at ${this.discordBotUrl}. Please set DISCORD_BOT_URL environment variable to your Railway deployment URL.`);
       }
 
       throw new Error(`Failed to send Midjourney prompt: ${error.message}`);
