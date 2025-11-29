@@ -15,6 +15,7 @@ const rateLimiter = require('./middleware/rateLimiter');
 
 // Import routes
 const routes = require('./routes');
+const webhookRoutes = require('./routes/webhooks');
 
 // Import cron jobs
 const dailyTrends = require('./cron/dailyTrends');
@@ -42,7 +43,10 @@ app.use(cors({
 
     const allowedOrigins = [
       'http://localhost:3000',
-      'https://doors22-dashboard.vercel.app'
+      'https://doors22-dashboard.vercel.app',
+      'https://dashboard.doors22.com',
+      'https://api.doors22.com',
+      'https://bot.doors22.com'
     ];
 
     // Allow all Vercel preview deployments
@@ -69,7 +73,6 @@ app.options('*', cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('combined'));
-app.use(rateLimiter);
 
 // Initialize Firebase
 initializeFirebase();
@@ -82,6 +85,7 @@ app.get('/', (req, res) => {
     status: 'online',
     endpoints: {
       health: '/health',
+      webhooks: '/webhooks/*',
       api: '/api/*'
     }
   });
@@ -97,8 +101,11 @@ app.get('/health', (req, res) => {
   });
 });
 
-// API Routes
-app.use('/api', routes);
+// Webhook Routes (no rate limiting for Meta webhooks - must be before rate limiter)
+app.use('/webhooks', webhookRoutes);
+
+// Apply rate limiter only to API routes
+app.use('/api', rateLimiter, routes);
 
 // Error Handler (must be last)
 app.use(errorHandler);
