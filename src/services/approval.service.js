@@ -224,9 +224,10 @@ class ApprovalService {
 
       logger.info(`Post rejected successfully: ${postId}`);
 
-      // Return updated post
+      // Return updated post with success flag
       const updatedDoc = await postRef.get();
       return {
+        success: true,
         id: updatedDoc.id,
         ...updatedDoc.data()
       };

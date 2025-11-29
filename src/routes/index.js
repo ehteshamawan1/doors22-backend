@@ -67,4 +67,27 @@ router.delete('/interactions/:id', interactionController.deleteInteraction);
 router.get('/settings', settingsController.getSettings);
 router.put('/settings', settingsController.updateSettings);
 
+// ===== LOGS ROUTES (FOR DEBUGGING) =====
+const { db } = require('../config/firebase');
+router.get('/logs', async (req, res) => {
+  try {
+    const { limit = 50, type } = req.query;
+    let query = db.collection('logs').orderBy('timestamp', 'desc').limit(parseInt(limit));
+
+    if (type) {
+      query = db.collection('logs').where('type', '==', type).orderBy('timestamp', 'desc').limit(parseInt(limit));
+    }
+
+    const snapshot = await query.get();
+    const logs = [];
+    snapshot.forEach(doc => {
+      logs.push({ id: doc.id, ...doc.data() });
+    });
+
+    res.json({ success: true, count: logs.length, logs });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;

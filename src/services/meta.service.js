@@ -8,18 +8,52 @@ const logger = require('../utils/logger');
 
 class MetaService {
   constructor() {
-    this.accessToken = process.env.META_PAGE_ACCESS_TOKEN;
-    this.pageId = process.env.META_PAGE_ID;
-    this.igUserId = process.env.META_IG_USER_ID;
     this.apiVersion = 'v21.0';
     this.baseUrl = `https://graph.facebook.com/${this.apiVersion}`;
+  }
+
+  /**
+   * Get fresh config values (in case env vars were updated)
+   */
+  getConfig() {
+    return {
+      accessToken: process.env.META_PAGE_ACCESS_TOKEN,
+      pageId: process.env.META_PAGE_ID,
+      igUserId: process.env.META_IG_USER_ID
+    };
   }
 
   /**
    * Check if Meta API is configured
    */
   isConfigured() {
-    return !!(this.accessToken && this.pageId && this.igUserId);
+    const config = this.getConfig();
+    const configured = !!(config.accessToken && config.pageId && config.igUserId);
+
+    if (!configured) {
+      logger.warn('Meta API not fully configured:', {
+        hasAccessToken: !!config.accessToken,
+        hasPageId: !!config.pageId,
+        hasIgUserId: !!config.igUserId
+      });
+    }
+
+    return configured;
+  }
+
+  /**
+   * Get config status for debugging
+   */
+  getConfigStatus() {
+    const config = this.getConfig();
+    return {
+      isConfigured: this.isConfigured(),
+      hasAccessToken: !!config.accessToken,
+      hasPageId: !!config.pageId,
+      hasIgUserId: !!config.igUserId,
+      pageId: config.pageId ? `${config.pageId.substring(0, 6)}...` : null,
+      igUserId: config.igUserId ? `${config.igUserId.substring(0, 6)}...` : null
+    };
   }
 
   /**
@@ -31,23 +65,27 @@ class MetaService {
    */
   async postToInstagram(params) {
     const { imageUrl, caption } = params;
+    const config = this.getConfig();
 
     if (!this.isConfigured()) {
       throw new Error('Meta API not configured. Check environment variables.');
     }
 
     try {
-      logger.info('Creating Instagram media container...');
+      logger.info('Creating Instagram media container...', {
+        igUserId: config.igUserId ? `${config.igUserId.substring(0, 6)}...` : 'NOT SET',
+        imageUrl: imageUrl?.substring(0, 50) + '...'
+      });
 
       // Step 1: Create media container
       const containerResponse = await axios.post(
-        `${this.baseUrl}/${this.igUserId}/media`,
+        `${this.baseUrl}/${config.igUserId}/media`,
         null,
         {
           params: {
             image_url: imageUrl,
             caption: caption,
-            access_token: this.accessToken
+            access_token: config.accessToken
           }
         }
       );
@@ -61,12 +99,12 @@ class MetaService {
       // Step 3: Publish the media
       logger.info('Publishing Instagram media...');
       const publishResponse = await axios.post(
-        `${this.baseUrl}/${this.igUserId}/media_publish`,
+        `${this.baseUrl}/${config.igUserId}/media_publish`,
         null,
         {
           params: {
             creation_id: creationId,
-            access_token: this.accessToken
+            access_token: config.accessToken
           }
         }
       );
@@ -82,7 +120,10 @@ class MetaService {
         postedAt: new Date().toISOString()
       };
     } catch (error) {
-      logger.error('Instagram posting failed:', error.response?.data || error.message);
+      logger.error('Instagram posting failed:', {
+        error: error.response?.data || error.message,
+        igUserId: config.igUserId ? `${config.igUserId.substring(0, 6)}...` : 'NOT SET'
+      });
       throw new Error(`Instagram post failed: ${error.response?.data?.error?.message || error.message}`);
     }
   }
@@ -97,20 +138,23 @@ class MetaService {
    */
   async postReelToInstagram(params) {
     const { videoUrl, caption, coverUrl } = params;
+    const config = this.getConfig();
 
     if (!this.isConfigured()) {
       throw new Error('Meta API not configured. Check environment variables.');
     }
 
     try {
-      logger.info('Creating Instagram reel container...');
+      logger.info('Creating Instagram reel container...', {
+        igUserId: config.igUserId ? `${config.igUserId.substring(0, 6)}...` : 'NOT SET'
+      });
 
       // Step 1: Create reel container
       const containerParams = {
         video_url: videoUrl,
         caption: caption,
         media_type: 'REELS',
-        access_token: this.accessToken
+        access_token: config.accessToken
       };
 
       if (coverUrl) {
@@ -118,7 +162,7 @@ class MetaService {
       }
 
       const containerResponse = await axios.post(
-        `${this.baseUrl}/${this.igUserId}/media`,
+        `${this.baseUrl}/${config.igUserId}/media`,
         null,
         { params: containerParams }
       );
@@ -132,12 +176,12 @@ class MetaService {
       // Step 3: Publish the reel
       logger.info('Publishing Instagram reel...');
       const publishResponse = await axios.post(
-        `${this.baseUrl}/${this.igUserId}/media_publish`,
+        `${this.baseUrl}/${config.igUserId}/media_publish`,
         null,
         {
           params: {
             creation_id: creationId,
-            access_token: this.accessToken
+            access_token: config.accessToken
           }
         }
       );
@@ -163,6 +207,8 @@ class MetaService {
    * Wait for Instagram media container to be ready
    */
   async waitForMediaReady(creationId, maxAttempts = 30, intervalMs = 2000) {
+    const config = this.getConfig();
+
     for (let i = 0; i < maxAttempts; i++) {
       try {
         const statusResponse = await axios.get(
@@ -170,13 +216,13 @@ class MetaService {
           {
             params: {
               fields: 'status_code',
-              access_token: this.accessToken
+              access_token: config.accessToken
             }
           }
         );
 
         const status = statusResponse.data.status_code;
-        logger.info(`Media container status: ${status}`);
+        logger.info(`Media container status (attempt ${i + 1}/${maxAttempts}): ${status}`);
 
         if (status === 'FINISHED') {
           return true;
@@ -192,6 +238,7 @@ class MetaService {
         if (error.message === 'Media processing failed') {
           throw error;
         }
+        logger.warn(`Status check error (attempt ${i + 1}):`, error.message);
         // Continue checking on other errors
         await new Promise(resolve => setTimeout(resolve, intervalMs));
       }
@@ -210,6 +257,7 @@ class MetaService {
    */
   async postToFacebook(params) {
     const { mediaUrl, caption, mediaType = 'image' } = params;
+    const config = this.getConfig();
 
     if (!this.isConfigured()) {
       throw new Error('Meta API not configured. Check environment variables.');
@@ -220,29 +268,33 @@ class MetaService {
 
       if (mediaType === 'video') {
         // Post video
-        logger.info('Posting video to Facebook...');
+        logger.info('Posting video to Facebook...', {
+          pageId: config.pageId ? `${config.pageId.substring(0, 6)}...` : 'NOT SET'
+        });
         response = await axios.post(
-          `${this.baseUrl}/${this.pageId}/videos`,
+          `${this.baseUrl}/${config.pageId}/videos`,
           null,
           {
             params: {
               file_url: mediaUrl,
               description: caption,
-              access_token: this.accessToken
+              access_token: config.accessToken
             }
           }
         );
       } else {
         // Post image
-        logger.info('Posting image to Facebook...');
+        logger.info('Posting image to Facebook...', {
+          pageId: config.pageId ? `${config.pageId.substring(0, 6)}...` : 'NOT SET'
+        });
         response = await axios.post(
-          `${this.baseUrl}/${this.pageId}/photos`,
+          `${this.baseUrl}/${config.pageId}/photos`,
           null,
           {
             params: {
               url: mediaUrl,
               caption: caption,
-              access_token: this.accessToken
+              access_token: config.accessToken
             }
           }
         );

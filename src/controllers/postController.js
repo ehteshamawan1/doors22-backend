@@ -284,9 +284,10 @@ exports.rejectPost = async (req, res) => {
 exports.editPost = async (req, res) => {
   try {
     const { id } = req.params;
-    const { caption, hashtags, editedBy = 'admin' } = req.body;
+    const { caption, hashtags, editedBy = 'admin', updates: updatesFromBody } = req.body;
 
-    const updates = {};
+    // Support both formats: { caption, hashtags } or { updates: { caption, hashtags } }
+    const updates = updatesFromBody || {};
     if (caption) updates.caption = caption;
     if (hashtags) updates.hashtags = hashtags;
 
