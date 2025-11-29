@@ -10,6 +10,15 @@
 const { db } = require('../config/firebase');
 const logger = require('../utils/logger');
 
+// Lazy load to avoid circular dependency
+let postingModule = null;
+function getPostingModule() {
+  if (!postingModule) {
+    postingModule = require('../cron/posting');
+  }
+  return postingModule;
+}
+
 class ApprovalService {
   constructor() {
     this.postsCollection = db.collection('posts');
@@ -120,10 +129,46 @@ class ApprovalService {
 
       // Return updated post
       const updatedDoc = await postRef.get();
-      return {
+      const updatedPost = {
         id: updatedDoc.id,
         ...updatedDoc.data()
       };
+
+      // Try to post immediately
+      try {
+        logger.info(`Attempting immediate posting for: ${postId}`);
+        const posting = getPostingModule();
+        const postResult = await posting.postImmediately(updatedPost);
+
+        if (postResult.success) {
+          logger.info(`Post ${postId} published immediately after approval`);
+          // Refresh the post data after posting
+          const finalDoc = await postRef.get();
+          return {
+            success: true,
+            id: finalDoc.id,
+            ...finalDoc.data(),
+            immediatePost: true
+          };
+        } else {
+          logger.warn(`Immediate posting failed for ${postId}, will retry via cron`);
+          return {
+            success: true,
+            ...updatedPost,
+            immediatePost: false,
+            postingError: postResult.error || postResult.errors
+          };
+        }
+      } catch (postError) {
+        logger.warn(`Immediate posting error for ${postId}:`, postError.message);
+        // Return the approved post - cron will pick it up later
+        return {
+          success: true,
+          ...updatedPost,
+          immediatePost: false,
+          postingError: postError.message
+        };
+      }
     } catch (error) {
       logger.error('Error approving post:', error.message);
       throw new Error(`Failed to approve post: ${error.message}`);
@@ -276,10 +321,44 @@ class ApprovalService {
 
       // Return updated post
       const updatedDoc = await postRef.get();
-      return {
+      const updatedPost = {
         id: updatedDoc.id,
         ...updatedDoc.data()
       };
+
+      // Try to post immediately
+      try {
+        logger.info(`Attempting immediate posting for edited post: ${postId}`);
+        const posting = getPostingModule();
+        const postResult = await posting.postImmediately(updatedPost);
+
+        if (postResult.success) {
+          logger.info(`Post ${postId} published immediately after edit`);
+          const finalDoc = await postRef.get();
+          return {
+            success: true,
+            id: finalDoc.id,
+            ...finalDoc.data(),
+            immediatePost: true
+          };
+        } else {
+          logger.warn(`Immediate posting failed for ${postId}, will retry via cron`);
+          return {
+            success: true,
+            ...updatedPost,
+            immediatePost: false,
+            postingError: postResult.error || postResult.errors
+          };
+        }
+      } catch (postError) {
+        logger.warn(`Immediate posting error for ${postId}:`, postError.message);
+        return {
+          success: true,
+          ...updatedPost,
+          immediatePost: false,
+          postingError: postError.message
+        };
+      }
     } catch (error) {
       logger.error('Error editing post:', error.message);
       throw new Error(`Failed to edit post: ${error.message}`);

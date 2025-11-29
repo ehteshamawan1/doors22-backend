@@ -22,6 +22,7 @@ const dailyTrends = require('./cron/dailyTrends');
 const contentGeneration = require('./cron/contentGeneration');
 const posting = require('./cron/posting');
 const analytics = require('./cron/analytics');
+const autoReply = require('./cron/autoReply');
 
 // Initialize Express app
 const app = express();
@@ -134,6 +135,18 @@ if (process.env.NODE_ENV !== 'test') {
   cron.schedule(process.env.CRON_WEEKLY_ANALYTICS || '0 0 * * 0', () => {
     logger.info('Starting weekly analytics...');
     analytics.run().catch(err => logger.error('Weekly analytics failed:', err));
+  });
+
+  // Auto-reply to comments and DMs every 5 minutes
+  cron.schedule(process.env.CRON_AUTO_REPLY || '*/5 * * * *', () => {
+    logger.info('Starting auto-reply...');
+    autoReply.run().catch(err => logger.error('Auto-reply failed:', err));
+  });
+
+  // Check for approved posts every 5 minutes (in addition to daily posting)
+  cron.schedule(process.env.CRON_POSTING_CHECK || '*/5 * * * *', () => {
+    logger.info('Checking for approved posts...');
+    posting.run().catch(err => logger.error('Posting check failed:', err));
   });
 
   logger.info('All cron jobs scheduled successfully');

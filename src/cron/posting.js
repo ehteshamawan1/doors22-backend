@@ -1,22 +1,33 @@
 const logger = require('../utils/logger');
 const approvalService = require('../services/approval.service');
+const metaService = require('../services/meta.service');
 const { db } = require('../config/firebase');
 
 /**
  * posting cron job
  * Runs daily at 5:00 PM UTC (12:00 PM EST - optimal posting time)
+ * Also runs every 5 minutes to check for approved posts ready to publish
  *
- * CURRENT STATUS: STUB IMPLEMENTATION
- * Meta API integration is pending (Facebook/Instagram credentials not ready)
- *
- * This job checks for approved posts and prepares them for posting.
- * Once Meta API is configured, it will automatically post to Instagram/Facebook.
+ * This job checks for approved posts and posts them to Instagram/Facebook.
  */
 async function run() {
   try {
     logger.info('=== Running Auto-Posting Cron Job ===');
 
     const startTime = Date.now();
+
+    // Check if Meta API is configured
+    if (!metaService.isConfigured()) {
+      logger.warn('META API NOT CONFIGURED - Check environment variables:');
+      logger.warn('  - META_PAGE_ACCESS_TOKEN');
+      logger.warn('  - META_PAGE_ID');
+      logger.warn('  - META_IG_USER_ID');
+      return {
+        success: false,
+        message: 'Meta API not configured',
+        posted: 0
+      };
+    }
 
     // Get approved posts ready for posting
     logger.info('Fetching approved posts...');
@@ -36,77 +47,69 @@ async function run() {
     const results = {
       success: 0,
       failed: 0,
-      skipped: 0
+      partial: 0
     };
 
     for (const post of approvedPosts) {
       try {
         logger.info(`Processing post: ${post.id} (${post.type})`);
 
-        // ===== META API INTEGRATION GOES HERE =====
-        // TODO: Uncomment and implement when Meta API credentials are ready
-
-        /*
-        // Post to Instagram
-        if (post.type === 'image') {
-          const igResult = await metaService.postToInstagram({
-            imageUrl: post.mediaUrl,
-            caption: post.fullPost
-          });
-          logger.info(`Posted to Instagram: ${igResult.postId}`);
-        } else if (post.type === 'video') {
-          const igResult = await metaService.postReelToInstagram({
-            videoUrl: post.mediaUrl,
-            caption: post.fullPost
-          });
-          logger.info(`Posted reel to Instagram: ${igResult.postId}`);
-        }
-
-        // Post to Facebook
-        const fbResult = await metaService.postToFacebook({
+        // Post to both platforms
+        const postResult = await metaService.postToBothPlatforms({
           mediaUrl: post.mediaUrl,
-          caption: post.fullPost,
+          caption: post.fullPost || `${post.caption}\n\n${post.hashtags?.join(' ') || ''}`,
           mediaType: post.type
         });
-        logger.info(`Posted to Facebook: ${fbResult.postId}`);
 
-        // Update post status to "posted"
-        await db.collection('posts').doc(post.id).update({
-          status: 'posted',
-          postedAt: new Date().toISOString(),
-          platforms: {
-            instagram: igResult,
-            facebook: fbResult
+        if (postResult.success) {
+          // Update post status to "posted"
+          await db.collection('posts').doc(post.id).update({
+            status: 'posted',
+            postedAt: new Date().toISOString(),
+            platforms: {
+              instagram: postResult.instagram,
+              facebook: postResult.facebook
+            },
+            postingErrors: postResult.errors.length > 0 ? postResult.errors : null
+          });
+
+          if (postResult.partialSuccess) {
+            results.partial++;
+            logger.warn(`Post ${post.id} partially published (some platforms failed)`);
+          } else {
+            results.success++;
+            logger.info(`Post ${post.id} published successfully to all platforms`);
           }
-        });
 
-        results.success++;
-        logger.info(`✓ Post ${post.id} published successfully`);
-        */
+          // Log success
+          await db.collection('logs').add({
+            type: 'posting_success',
+            postId: post.id,
+            platforms: {
+              instagram: !!postResult.instagram,
+              facebook: !!postResult.facebook
+            },
+            errors: postResult.errors,
+            timestamp: new Date().toISOString()
+          });
+        } else {
+          // Both platforms failed - keep as approved for retry
+          logger.error(`Post ${post.id} failed on all platforms`);
+          results.failed++;
 
-        // ===== STUB IMPLEMENTATION (CURRENT) =====
-        logger.warn('⚠️  META API NOT CONFIGURED - SKIPPING ACTUAL POST');
-        logger.info(`Post ${post.id} would be posted with:`);
-        logger.info(`  - Type: ${post.type}`);
-        logger.info(`  - Media: ${post.mediaUrl}`);
-        logger.info(`  - Caption: ${post.caption?.substring(0, 60)}...`);
-        logger.info(`  - Hashtags: ${post.hashtags?.slice(0, 3).join(', ')}...`);
-
-        results.skipped++;
-
-        // Log to logs collection
-        await db.collection('logs').add({
-          type: 'posting_skipped',
-          postId: post.id,
-          reason: 'Meta API not configured',
-          timestamp: new Date().toISOString()
-        });
-
+          // Log the failure but keep status as 'approved' for retry
+          await db.collection('logs').add({
+            type: 'posting_error',
+            postId: post.id,
+            errors: postResult.errors,
+            timestamp: new Date().toISOString()
+          });
+        }
       } catch (postError) {
         logger.error(`Failed to process post ${post.id}:`, postError.message);
         results.failed++;
 
-        // Log error
+        // Log error - post stays as 'approved' for retry
         await db.collection('logs').add({
           type: 'posting_error',
           postId: post.id,
@@ -118,19 +121,12 @@ async function run() {
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
     logger.info(`=== Auto-Posting Completed (${duration}s) ===`);
-    logger.info(`Success: ${results.success}, Failed: ${results.failed}, Skipped: ${results.skipped}`);
-
-    if (results.skipped > 0) {
-      logger.warn('⚠️  META API INTEGRATION REQUIRED');
-      logger.warn('Configure Facebook/Instagram credentials to enable auto-posting');
-    }
+    logger.info(`Success: ${results.success}, Partial: ${results.partial}, Failed: ${results.failed}`);
 
     return {
       success: true,
       results: results,
-      message: results.skipped > 0
-        ? 'Meta API not configured - posts skipped'
-        : `Posted ${results.success} post(s) successfully`
+      message: `Posted ${results.success} post(s) successfully, ${results.partial} partial, ${results.failed} failed`
     };
   } catch (error) {
     logger.error('posting cron job failed:', error.message);
@@ -138,4 +134,72 @@ async function run() {
   }
 }
 
-module.exports = { run };
+/**
+ * Post a single approved post immediately (called from approval service)
+ * @param {Object} post - Post data
+ * @returns {Promise<Object>} Posting result
+ */
+async function postImmediately(post) {
+  try {
+    logger.info(`Posting immediately: ${post.id}`);
+
+    if (!metaService.isConfigured()) {
+      throw new Error('Meta API not configured');
+    }
+
+    const postResult = await metaService.postToBothPlatforms({
+      mediaUrl: post.mediaUrl,
+      caption: post.fullPost || `${post.caption}\n\n${post.hashtags?.join(' ') || ''}`,
+      mediaType: post.type
+    });
+
+    if (postResult.success) {
+      await db.collection('posts').doc(post.id).update({
+        status: 'posted',
+        postedAt: new Date().toISOString(),
+        platforms: {
+          instagram: postResult.instagram,
+          facebook: postResult.facebook
+        },
+        postingErrors: postResult.errors.length > 0 ? postResult.errors : null
+      });
+
+      logger.info(`Post ${post.id} published immediately`);
+
+      await db.collection('logs').add({
+        type: 'immediate_posting_success',
+        postId: post.id,
+        platforms: {
+          instagram: !!postResult.instagram,
+          facebook: !!postResult.facebook
+        },
+        timestamp: new Date().toISOString()
+      });
+
+      return { success: true, result: postResult };
+    } else {
+      // Keep as approved for retry via cron
+      await db.collection('logs').add({
+        type: 'immediate_posting_failed',
+        postId: post.id,
+        errors: postResult.errors,
+        timestamp: new Date().toISOString()
+      });
+
+      return { success: false, errors: postResult.errors };
+    }
+  } catch (error) {
+    logger.error(`Immediate posting failed for ${post.id}:`, error.message);
+
+    await db.collection('logs').add({
+      type: 'immediate_posting_error',
+      postId: post.id,
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+
+    return { success: false, error: error.message };
+  }
+}
+
+module.exports = { run, postImmediately };

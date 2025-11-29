@@ -365,6 +365,30 @@ Return JSON:
       throw new Error(`Content concept generation failed: ${error.message}`);
     }
   }
+
+  /**
+   * Generate AI response for interaction (alias for generateResponse)
+   * @param {Object} params - Parameters
+   * @returns {Promise<Object>} Response data
+   */
+  async generateInteractionResponse(params) {
+    try {
+      const result = await this.generateResponse({
+        message: params.message,
+        platform: params.platform,
+        type: params.type
+      });
+
+      return {
+        response: result.response,
+        category: result.category,
+        redirected: result.shouldRedirect
+      };
+    } catch (error) {
+      logger.error('Error generating interaction response:', error.message);
+      throw error;
+    }
+  }
 }
 
 module.exports = new AIEngineService();
