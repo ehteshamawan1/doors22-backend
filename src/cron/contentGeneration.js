@@ -177,6 +177,7 @@ async function generateForCategory(category, trendData) {
     fullPost: captionData.fullPost || `${finalCaption}\n\n${(captionData.hashtags || []).join(' ')}`,
     cta: captionData.cta || 'Get a free quote at doors22.com/price or call (305) 394-9922',
     generatedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
     status: 'pending',
     aspectRatio: '4:5',
     approvalHistory: [],
