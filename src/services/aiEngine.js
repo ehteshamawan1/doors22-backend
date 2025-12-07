@@ -92,6 +92,8 @@ Provide actionable insights for creating engaging content.`;
    * @param {Object} contentData - Content information
    * @param {string} contentData.type - 'image' or 'video'
    * @param {string} contentData.description - Content description
+   * @param {string} contentData.category - Product category (room_dividers, closet_doors, home_offices)
+   * @param {string} contentData.keyword - Required SEO keyword to include
    * @param {Object} contentData.trendData - Trend analysis data
    * @returns {Promise<Object>} Generated caption and hashtags
    */
@@ -99,16 +101,30 @@ Provide actionable insights for creating engaging content.`;
     try {
       logger.info(`Generating caption for ${contentData.type}...`);
 
-      const { type, description, trendData, concept } = contentData;
+      const { type, description, trendData, concept, category, keyword } = contentData;
       const contentDescription = description || concept || 'Glass doors and partitions installation';
+
+      // Determine required keyword based on category
+      const requiredKeyword = keyword || this.getCategoryKeyword(category);
+
+      if (requiredKeyword) {
+        logger.info(`Required keyword: "${requiredKeyword}"`);
+      }
+
+      const keywordInstruction = requiredKeyword
+        ? `\n\n**CRITICAL REQUIREMENT:**
+The caption MUST naturally include the exact phrase: "${requiredKeyword}"
+This is a required SEO keyword that must appear in the caption text.`
+        : '';
 
       const prompt = `Create an engaging ${type === 'video' ? 'reel/video' : 'image'} caption for Instagram and Facebook for Doors22, a glass doors and partitions company.
 
-Content: ${contentDescription}
+Content: ${contentDescription}${keywordInstruction}
 
 Requirements:
 - ${type === 'video' ? '40-60 characters' : '120-150 characters'} main caption (engaging hook)
 - Professional yet approachable tone
+${requiredKeyword ? `- MUST include the exact phrase: "${requiredKeyword}"` : ''}
 - Include a clear call-to-action
 - Mention key benefits (elegance, functionality, modern design)
 - ${type === 'video' ? 'Video-specific language (watch, see, discover)' : ''}
@@ -125,9 +141,10 @@ Trending context:
 
 Return JSON:
 {
-  "text": "Main engaging caption text (the actual caption to post)",
+  "caption": "Main engaging caption text that INCLUDES '${requiredKeyword || 'glass doors'}'",
   "hashtags": ["#GlassPartitions", "#OfficeDesign", ...], (8-12 diverse hashtags, vary each time)
-  "cta": "Call-to-action text like 'Get your free quote at doors22.com/price or call (305) 394-9922'"
+  "cta": "Call-to-action text like 'Get your free quote at doors22.com/price or call (305) 394-9922'",
+  "fullPost": "Complete post with caption + hashtags + CTA combined"
 }`;
 
       const response = await openai.chat.completions.create({
@@ -135,7 +152,7 @@ Return JSON:
         messages: [
           {
             role: 'system',
-            content: 'You are a professional social media copywriter specializing in B2B commercial design content.'
+            content: 'You are a professional social media copywriter specializing in B2B commercial design content. ALWAYS include the required keyword phrase exactly as specified in the caption.'
           },
           {
             role: 'user',
@@ -148,6 +165,14 @@ Return JSON:
       });
 
       const captionData = JSON.parse(response.choices[0].message.content);
+
+      // Verify keyword is included (fallback if AI missed it)
+      const caption = captionData.caption || captionData.text;
+      if (requiredKeyword && caption && !caption.toLowerCase().includes(requiredKeyword.toLowerCase())) {
+        logger.warn('AI did not include required keyword, prepending...');
+        captionData.caption = `${requiredKeyword.charAt(0).toUpperCase() + requiredKeyword.slice(1)} - ${caption}`;
+      }
+
       logger.info('Caption generated successfully');
 
       return captionData;
@@ -155,6 +180,20 @@ Return JSON:
       logger.error('Error generating caption:', error.message);
       throw new Error(`Caption generation failed: ${error.message}`);
     }
+  }
+
+  /**
+   * Get the required keyword for a category
+   * @param {string} category - Category key
+   * @returns {string|null} Required keyword
+   */
+  getCategoryKeyword(category) {
+    const keywords = {
+      'room_dividers': 'sliding glass room divider',
+      'closet_doors': 'sliding glass closet door',
+      'home_offices': 'sliding glass home office'
+    };
+    return keywords[category] || null;
   }
 
   /**
@@ -231,6 +270,7 @@ Return JSON:
 
   /**
    * Generate response to a comment or DM
+   * ALL responses MUST include phone (305) 394-9922 and quote link https://doors22.com/price/
    * @param {Object} messageData - Message information
    * @param {string} messageData.message - User's message
    * @param {string} messageData.platform - 'instagram' or 'facebook'
@@ -257,21 +297,30 @@ Categories:
 - complaint: Negative feedback/issues
 - general_inquiry: General questions
 
+**CRITICAL REQUIREMENT:**
+EVERY response MUST include BOTH:
+1. Free quote link: https://doors22.com/price/
+2. Phone number: (305) 394-9922
+
+This is mandatory for ALL responses, regardless of category.
+
 Requirements:
 - Professional but friendly tone
-- Keep responses under 280 characters
-- Include CTA when appropriate
-- For price inquiries: Direct to https://doors22.com/price/ or call (305) 394-9922
-- For service area: Mention "South Florida" coverage
+- Keep responses under 300 characters
+- ALWAYS include the quote link and phone number
+- Mention "We ship nationwide across the US!"
+
+Example format:
+"Thank you for reaching out! [Your relevant response]. Get a free quote: https://doors22.com/price/ or call (305) 394-9922. We ship nationwide across the US!"
 
 Return JSON:
 {
   "category": "category_name",
-  "response": "Your response text here",
-  "shouldRedirect": true/false,
-  "redirectUrl": "URL if applicable",
+  "response": "Your response text (MUST include https://doors22.com/price/ AND (305) 394-9922)",
+  "shouldRedirect": true,
+  "redirectUrl": "https://doors22.com/price/",
   "priority": "high|medium|low",
-  "requiresHumanFollowup": true/false
+  "requiresHumanFollowup": false
 }`;
 
       const response = await openai.chat.completions.create({
@@ -279,7 +328,7 @@ Return JSON:
         messages: [
           {
             role: 'system',
-            content: 'You are a helpful, professional customer service AI for a commercial glass doors company.'
+            content: 'You are a helpful, professional customer service AI for Doors22. ALWAYS include the quote link https://doors22.com/price/ and phone (305) 394-9922 in every response.'
           },
           {
             role: 'user',
@@ -292,6 +341,19 @@ Return JSON:
       });
 
       const responseData = JSON.parse(response.choices[0].message.content);
+
+      // Verify response includes required contact info, add if missing
+      if (responseData.response) {
+        const hasQuoteLink = responseData.response.includes('doors22.com/price');
+        const hasPhone = responseData.response.includes('(305) 394-9922') || responseData.response.includes('305-394-9922');
+
+        if (!hasQuoteLink || !hasPhone) {
+          logger.warn('AI response missing required contact info, appending...');
+          const suffix = '\n\nGet a free quote: https://doors22.com/price/ or call (305) 394-9922';
+          responseData.response = responseData.response.trim() + suffix;
+        }
+      }
+
       logger.info('Response generated successfully');
 
       return responseData;

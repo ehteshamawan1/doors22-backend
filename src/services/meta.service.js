@@ -372,6 +372,8 @@ class MetaService {
    * @param {string} message - Reply message
    */
   async replyToInstagramComment(commentId, message) {
+    const config = this.getConfig();
+
     if (!this.isConfigured()) {
       throw new Error('Meta API not configured');
     }
@@ -383,7 +385,7 @@ class MetaService {
         {
           params: {
             message: message,
-            access_token: this.accessToken
+            access_token: config.accessToken
           }
         }
       );
@@ -405,6 +407,8 @@ class MetaService {
    * @param {string} message - Reply message
    */
   async replyToFacebookComment(commentId, message) {
+    const config = this.getConfig();
+
     if (!this.isConfigured()) {
       throw new Error('Meta API not configured');
     }
@@ -416,7 +420,7 @@ class MetaService {
         {
           params: {
             message: message,
-            access_token: this.accessToken
+            access_token: config.accessToken
           }
         }
       );
@@ -438,19 +442,21 @@ class MetaService {
    * @param {string} message - Message text
    */
   async sendInstagramDM(userId, message) {
+    const config = this.getConfig();
+
     if (!this.isConfigured()) {
       throw new Error('Meta API not configured');
     }
 
     try {
       const response = await axios.post(
-        `${this.baseUrl}/${this.igUserId}/messages`,
+        `${this.baseUrl}/${config.igUserId}/messages`,
         null,
         {
           params: {
             recipient: JSON.stringify({ id: userId }),
             message: JSON.stringify({ text: message }),
-            access_token: this.accessToken
+            access_token: config.accessToken
           }
         }
       );
@@ -472,19 +478,21 @@ class MetaService {
    * @param {string} message - Message text
    */
   async sendFacebookMessage(userId, message) {
+    const config = this.getConfig();
+
     if (!this.isConfigured()) {
       throw new Error('Meta API not configured');
     }
 
     try {
       const response = await axios.post(
-        `${this.baseUrl}/${this.pageId}/messages`,
+        `${this.baseUrl}/${config.pageId}/messages`,
         null,
         {
           params: {
             recipient: JSON.stringify({ id: userId }),
             message: JSON.stringify({ text: message }),
-            access_token: this.accessToken
+            access_token: config.accessToken
           }
         }
       );

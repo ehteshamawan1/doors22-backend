@@ -181,16 +181,18 @@ async function run() {
 
 /**
  * Get fallback response based on category
+ * ALL responses include phone (305) 394-9922 and quote link https://doors22.com/price/
  */
 function getFallbackResponse(category) {
   const responses = {
-    price_inquiry: 'Hi! Our pricing varies based on size and customization. Get an instant quote here: https://doors22.com/price/ or call us at (305) 394-9922',
-    technical_question: 'Great question! For detailed information, visit https://doors22.com/price/ or call us at (305) 394-9922. Our team is happy to help!',
-    compliment: 'Thank you so much! We appreciate your kind words. Check out more of our work at https://doors22.com/',
-    faq: 'Thanks for reaching out! For more information, visit https://doors22.com/price/ or call us at (305) 394-9922. We\'re here to help!'
+    price_inquiry: 'Thank you for your interest! Get a free instant quote: https://doors22.com/price/ or call us at (305) 394-9922. We ship nationwide across the US!',
+    technical_question: 'Great question! For detailed information and a free quote, visit https://doors22.com/price/ or call us at (305) 394-9922. Our team is happy to help!',
+    compliment: 'Thank you so much for your kind words! We\'d love to help you too. Get a free quote: https://doors22.com/price/ or call (305) 394-9922',
+    faq: 'Thanks for reaching out! Get a free quote: https://doors22.com/price/ or call us at (305) 394-9922. We ship nationwide across the US!',
+    general: 'Thank you for reaching out! Get a free quote: https://doors22.com/price/ or call us at (305) 394-9922. We ship nationwide across the US!'
   };
 
-  return responses[category] || responses.faq;
+  return responses[category] || responses.general;
 }
 
 module.exports = { run };
