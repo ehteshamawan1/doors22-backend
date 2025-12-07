@@ -198,21 +198,37 @@ Return JSON:
 
   /**
    * Generate Midjourney prompt for image or video
+   * Supports reference images for image-to-image generation
    * @param {Object} options - Generation options
    * @param {string} options.type - 'image' or 'video'
    * @param {Object} options.trendData - Trend analysis data
    * @param {string} options.concept - Specific concept (optional)
+   * @param {string} options.category - Product category (room_dividers, closet_doors, home_offices)
+   * @param {string} options.keyword - SEO keyword for the category
+   * @param {string} options.referenceUrl - Reference image URL for image-to-image
+   * @param {string} options.description - Description of the reference image
    * @returns {Promise<Object>} Midjourney prompt and metadata
    */
   async generateMidjourneyPrompt(options) {
     try {
       logger.info(`Generating Midjourney prompt for ${options.type}...`);
 
-      const { type, trendData, concept } = options;
+      const { type, trendData, concept, category, keyword, referenceUrl, description } = options;
 
-      const prompt = `Create a detailed Midjourney prompt for a high-quality professional photograph showcasing glass doors or partitions for Doors22.
+      // Build context about what we're generating
+      const productContext = description || concept || 'Glass doors and partitions';
+      const categoryName = category ? this.getCategoryDisplayName(category) : 'glass doors';
+
+      const prompt = `Create a detailed Midjourney prompt for a high-quality professional photograph showcasing ${categoryName} for Doors22.
+
+${referenceUrl ? `IMPORTANT: This prompt will be used with a REFERENCE IMAGE for image-to-image generation.
+The reference image shows: ${productContext}
+The generated image should maintain the same product style, frame colors, and glass type while creating a fresh, professional setting.` : ''}
 
 ${concept ? `Specific concept: ${concept}` : ''}
+
+Product Details: ${productContext}
+${keyword ? `Key product: ${keyword}` : ''}
 
 Trending styles: ${trendData?.imagePostStyles?.join(', ') || 'Professional photography, before/after, modern office spaces'}
 
@@ -224,17 +240,18 @@ Requirements:
 - Modern commercial office or residential space
 - Natural lighting emphasis
 - Clean, minimalist aesthetic
-- Professional composition with glass doors/partitions as the focal point
+- Professional composition with the ${keyword || 'glass doors/partitions'} as the focal point
+- Maintain product authenticity (same frame style, glass type as reference)
 - NO motion, animation, or video-related descriptions
-- Aspect ratio: 4:5 (${type === 'video' ? 'will be adjusted for video later' : 'Instagram feed optimized'})
+- Aspect ratio: ${type === 'video' ? '9:16 (vertical for video)' : '4:5 (Instagram feed optimized)'}
 
 Return JSON:
 {
-  "prompt": "Complete Midjourney prompt with all parameters (for a STATIC photograph, no video/motion language)",
+  "prompt": "Complete Midjourney prompt describing the scene and product (DO NOT include the reference URL - that will be added separately)",
   "concept": "Brief description of the concept",
   "style": "modern-professional|elegant-minimalist|industrial-chic",
   "parameters": {
-    "ar": "4:5",
+    "ar": "${type === 'video' ? '9:16' : '4:5'}",
     "version": "6",
     "style": "raw"
   },
@@ -246,7 +263,7 @@ Return JSON:
         messages: [
           {
             role: 'system',
-            content: 'You are an expert in creating Midjourney prompts for professional commercial design photography and videography.'
+            content: 'You are an expert in creating Midjourney prompts for professional commercial design photography. When a reference image is provided, create prompts that complement the reference while generating fresh, professional settings.'
           },
           {
             role: 'user',
@@ -259,6 +276,16 @@ Return JSON:
       });
 
       const promptData = JSON.parse(response.choices[0].message.content);
+
+      // Add reference URL to the returned data (will be used by midjourney.service.js)
+      if (referenceUrl) {
+        promptData.referenceUrl = referenceUrl;
+      }
+
+      // Add category and keyword
+      if (category) promptData.category = category;
+      if (keyword) promptData.keyword = keyword;
+
       logger.info('Midjourney prompt generated successfully');
 
       return promptData;
@@ -266,6 +293,20 @@ Return JSON:
       logger.error('Error generating Midjourney prompt:', error.message);
       throw new Error(`Midjourney prompt generation failed: ${error.message}`);
     }
+  }
+
+  /**
+   * Get display name for a category
+   * @param {string} category - Category key
+   * @returns {string} Display name
+   */
+  getCategoryDisplayName(category) {
+    const names = {
+      'room_dividers': 'Room Dividers',
+      'closet_doors': 'Closet Doors',
+      'home_offices': 'Home Offices'
+    };
+    return names[category] || 'Glass Doors';
   }
 
   /**

@@ -7,12 +7,15 @@
  * - Closet Doors
  * - Home Offices
  *
- * Uses pre-uploaded reference images from Cloudinary instead of Midjourney
- * for 100% product accuracy and reliability.
+ * Uses reference images as INPUT to Midjourney for product accuracy.
+ * Midjourney generates NEW images that look similar to the reference.
+ * Uses --iw 2 (high image weight) for maximum product similarity.
  */
 
 const logger = require('../utils/logger');
 const aiEngine = require('../services/aiEngine');
+const midjourneyService = require('../services/midjourney.service');
+const cloudinaryService = require('../services/cloudinary.service');
 const referenceImagesService = require('../services/referenceImages.service');
 const { db } = require('../config/firebase');
 const { generatePostId } = require('../utils/helpers');
@@ -26,18 +29,18 @@ const DAILY_CATEGORIES = [
 
 /**
  * Main content generation runner
- * Generates one post for each category
+ * Generates one post for each category using Midjourney with reference images
  */
 async function run() {
   try {
     logger.info('═══════════════════════════════════════════════════════════');
-    logger.info('  Content Generation Started - 3 Categories');
+    logger.info('  Content Generation Started - 3 Categories (Midjourney)');
     logger.info('═══════════════════════════════════════════════════════════');
 
     const startTime = Date.now();
     const results = [];
 
-    // Get latest trends for caption generation
+    // Get latest trends for content generation
     logger.info('Fetching latest trends...');
     const trendsSnapshot = await db.collection('trends')
       .orderBy('date', 'desc')
@@ -121,24 +124,68 @@ async function run() {
 }
 
 /**
- * Generate content for a specific category
+ * Generate content for a specific category using Midjourney
  * @param {string} category - Category key
  * @param {Object} trendData - Latest trend analysis data
  * @returns {Promise<Object>} Generation result
  */
 async function generateForCategory(category, trendData) {
   // Step 1: Get random reference image for this category
-  logger.info(`Selecting reference image for ${category}...`);
+  logger.info(`Step 1: Selecting reference image for ${category}...`);
   const imageData = await referenceImagesService.getRandomImage(category);
   logger.info(`Selected: ${imageData.publicId}`);
+  logger.info(`Reference URL: ${imageData.url}`);
 
-  // Build description for caption generation
+  // Build description for prompt generation
   const description = buildDescription(imageData);
+  logger.info(`Description: ${description}`);
 
-  // Step 2: Generate caption with category-specific keyword
-  logger.info('Generating caption...');
+  // Step 2: Determine content type based on trends mix (70% images, 30% videos)
+  const contentMix = trendData?.contentMix || { images: 70, videos: 30 };
+  const random = Math.random() * 100;
+  const contentType = random < contentMix.images ? 'image' : 'video';
+  logger.info(`Step 2: Content type selected: ${contentType} (random: ${random.toFixed(1)}, threshold: ${contentMix.images})`);
+
+  // Step 3: Generate Midjourney prompt with reference image
+  logger.info('Step 3: Generating Midjourney prompt...');
+  const promptData = await aiEngine.generateMidjourneyPrompt({
+    type: contentType,
+    category: category,
+    keyword: imageData.keyword,
+    referenceUrl: imageData.url,
+    description: description,
+    trendData: trendData
+  });
+  logger.info(`Prompt: ${promptData.prompt}`);
+
+  // Step 4: Generate with Midjourney (includes upscaling)
+  // Format: "{referenceUrl} {prompt} --iw 2 --ar 4:5 --v 6"
+  logger.info(`Step 4: Generating ${contentType} with Midjourney...`);
+  const generationResult = await midjourneyService.generate({
+    prompt: promptData.prompt,
+    type: contentType,
+    referenceUrl: imageData.url,
+    parameters: {
+      ...promptData.parameters,
+      iw: 2  // High image weight for product accuracy
+    }
+  });
+  logger.info(`${contentType} generated successfully (${(generationResult.fileSize / 1024 / 1024).toFixed(2)} MB)`);
+
+  // Step 5: Upload to Cloudinary
+  const postId = generatePostId();
+  logger.info(`Step 5: Uploading to Cloudinary (postId: ${postId})...`);
+  const uploadResult = await cloudinaryService.uploadMedia(generationResult.mediaBuffer, {
+    type: contentType,
+    postId: postId,
+    filename: postId
+  });
+  logger.info(`Uploaded to: ${uploadResult.url}`);
+
+  // Step 6: Generate caption with category-specific keyword
+  logger.info('Step 6: Generating caption...');
   const captionData = await aiEngine.generateCaption({
-    type: 'image',
+    type: contentType,
     category: category,
     keyword: imageData.keyword,
     description: description,
@@ -151,22 +198,28 @@ async function generateForCategory(category, trendData) {
     logger.warn('Caption missing keyword, prepending...');
     finalCaption = `${imageData.keyword.charAt(0).toUpperCase() + imageData.keyword.slice(1)} - ${finalCaption}`;
   }
-
   logger.info(`Caption: ${finalCaption.substring(0, 60)}...`);
 
-  // Step 3: Store in Firebase with PENDING status
-  const postId = generatePostId();
+  // Step 7: Store in Firebase with PENDING status
+  logger.info('Step 7: Storing post in Firebase...');
   const postData = {
     postId: postId,
     date: new Date().toISOString().split('T')[0],
-    type: 'image',
+    type: contentType,
     category: category,
     keyword: imageData.keyword,
     displayName: imageData.displayName,
-    mediaUrl: imageData.url,
-    thumbnailUrl: imageData.url,
-    cloudinaryPublicId: imageData.publicId,
-    sourceType: 'reference',
+    mediaUrl: uploadResult.url,
+    thumbnailUrl: uploadResult.thumbnailUrl || uploadResult.url,
+    cloudinaryPublicId: uploadResult.publicId,
+    referenceImage: {
+      url: imageData.url,
+      publicId: imageData.publicId,
+      frame: imageData.frame || null,
+      glassType: imageData.glassType || null,
+      panels: imageData.panels || null
+    },
+    midjourneyPrompt: generationResult.prompt,
     productDetails: {
       frame: imageData.frame || null,
       glassType: imageData.glassType || null,
@@ -179,7 +232,12 @@ async function generateForCategory(category, trendData) {
     generatedAt: new Date().toISOString(),
     createdAt: new Date().toISOString(),
     status: 'pending',
-    aspectRatio: '4:5',
+    aspectRatio: contentType === 'video' ? '9:16' : '4:5',
+    format: uploadResult.format,
+    fileSize: uploadResult.fileSize,
+    width: uploadResult.width,
+    height: uploadResult.height,
+    duration: uploadResult.duration || null,
     approvalHistory: [],
     editHistory: [],
     scheduledPostTime: null,
@@ -194,6 +252,8 @@ async function generateForCategory(category, trendData) {
     type: 'content_generation',
     postId: docRef.id,
     category: category,
+    contentType: contentType,
+    referenceImage: imageData.publicId,
     status: 'success',
     timestamp: new Date().toISOString()
   });
@@ -203,6 +263,7 @@ async function generateForCategory(category, trendData) {
     postId: docRef.id,
     category: category,
     keyword: imageData.keyword,
+    type: contentType,
     status: 'pending'
   };
 }

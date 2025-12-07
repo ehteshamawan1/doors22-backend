@@ -26,16 +26,21 @@ class MidjourneyService {
    * @param {string} promptData.prompt - Midjourney prompt
    * @param {string} promptData.type - 'image' or 'video'
    * @param {Object} promptData.parameters - Prompt parameters
+   * @param {string} promptData.referenceUrl - Optional reference image URL
    * @returns {Promise<Object>} Generation request info
    */
   async sendPrompt(promptData) {
     try {
       logger.info(`Sending ${promptData.type} prompt to Midjourney...`);
 
-      const { prompt, type, parameters } = promptData;
+      const { prompt, type, parameters, referenceUrl } = promptData;
 
-      // Build full Midjourney command
-      const fullPrompt = this.buildMidjourneyCommand(prompt, parameters, type);
+      // Build full Midjourney command (with optional reference image)
+      const fullPrompt = this.buildMidjourneyCommand(prompt, parameters, type, referenceUrl);
+
+      if (referenceUrl) {
+        logger.info(`Using reference image: ${referenceUrl}`);
+      }
 
       logger.info(`Full Midjourney command: ${fullPrompt}`);
 
@@ -77,13 +82,29 @@ class MidjourneyService {
 
   /**
    * Build complete Midjourney command with parameters
+   * Supports reference images for image-to-image generation
    * @param {string} basePrompt - Base prompt text
    * @param {Object} parameters - Parameters object
    * @param {string} type - 'image' or 'video'
+   * @param {string} referenceUrl - Optional reference image URL (for image-to-image)
    * @returns {string} Complete Midjourney command
    */
-  buildMidjourneyCommand(basePrompt, parameters = {}, type = 'image') {
-    let command = basePrompt;
+  buildMidjourneyCommand(basePrompt, parameters = {}, type = 'image', referenceUrl = null) {
+    let command = '';
+
+    // Reference image URL goes at the START of the prompt
+    // Format: "{referenceUrl} {prompt} --iw 2 --ar 4:5 --v 6"
+    if (referenceUrl) {
+      command = `${referenceUrl} ${basePrompt}`;
+    } else {
+      command = basePrompt;
+    }
+
+    // Add image weight (for reference image adherence)
+    // --iw ranges from 0.5 to 2, higher = more similar to reference
+    if (parameters.iw) {
+      command += ` --iw ${parameters.iw}`;
+    }
 
     // Add aspect ratio
     const ar = parameters.ar || (type === 'video' ? '9:16' : '4:5');

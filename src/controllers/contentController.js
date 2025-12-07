@@ -1,10 +1,13 @@
 /**
  * Content Controller
  * Handles content generation API endpoints
+ * Uses Midjourney with reference images for image-to-image generation
  */
 
 const { db } = require('../config/firebase');
 const aiEngine = require('../services/aiEngine');
+const midjourneyService = require('../services/midjourney.service');
+const cloudinaryService = require('../services/cloudinary.service');
 const referenceImagesService = require('../services/referenceImages.service');
 const logger = require('../utils/logger');
 const { generatePostId } = require('../utils/helpers');
@@ -123,12 +126,15 @@ exports.getCategories = async (req, res) => {
 /**
  * POST /api/content/generate
  * Manually trigger content generation for a specific category
+ * Uses Midjourney with reference images for image-to-image generation
  */
 exports.generateContent = async (req, res) => {
   try {
-    logger.info('Manual content generation triggered');
+    logger.info('═══════════════════════════════════════════════════════════');
+    logger.info('  Manual Content Generation (Midjourney)');
+    logger.info('═══════════════════════════════════════════════════════════');
 
-    const { category, trendId } = req.body;
+    const { category, trendId, type: requestedType } = req.body;
 
     // Validate category - if not provided or invalid, pick random
     let selectedCategory = category;
@@ -158,20 +164,61 @@ exports.generateContent = async (req, res) => {
       }
     }
 
-    // Get random reference image for this category
-    logger.info(`Selecting reference image for ${selectedCategory}...`);
+    // Step 1: Get random reference image for this category
+    logger.info(`Step 1: Selecting reference image for ${selectedCategory}...`);
     const imageData = await referenceImagesService.getRandomImage(selectedCategory);
     logger.info(`Selected: ${imageData.publicId}`);
+    logger.info(`Reference URL: ${imageData.url}`);
 
-    // Build description for caption generation
+    // Build description for prompt generation
     const description = buildDescription(imageData);
+    logger.info(`Description: ${description}`);
 
-    // Generate caption with category-specific keyword
-    logger.info('Generating caption...');
+    // Step 2: Determine content type (use requested or default to image)
+    const contentType = requestedType === 'video' ? 'video' : 'image';
+    logger.info(`Step 2: Content type: ${contentType}`);
+
+    // Step 3: Generate Midjourney prompt with reference image
+    logger.info('Step 3: Generating Midjourney prompt...');
+    const promptData = await aiEngine.generateMidjourneyPrompt({
+      type: contentType,
+      category: selectedCategory,
+      keyword: imageData.keyword,
+      referenceUrl: imageData.url,
+      description: description,
+      trendData: trendData
+    });
+    logger.info(`Prompt: ${promptData.prompt}`);
+
+    // Step 4: Generate with Midjourney (includes upscaling)
+    logger.info(`Step 4: Generating ${contentType} with Midjourney...`);
+    const generationResult = await midjourneyService.generate({
+      prompt: promptData.prompt,
+      type: contentType,
+      referenceUrl: imageData.url,
+      parameters: {
+        ...promptData.parameters,
+        iw: 2  // High image weight for product accuracy
+      }
+    });
+    logger.info(`${contentType} generated successfully (${(generationResult.fileSize / 1024 / 1024).toFixed(2)} MB)`);
+
+    // Step 5: Upload to Cloudinary
+    const postId = generatePostId();
+    logger.info(`Step 5: Uploading to Cloudinary (postId: ${postId})...`);
+    const uploadResult = await cloudinaryService.uploadMedia(generationResult.mediaBuffer, {
+      type: contentType,
+      postId: postId,
+      filename: postId
+    });
+    logger.info(`Uploaded to: ${uploadResult.url}`);
+
+    // Step 6: Generate caption with category-specific keyword
+    logger.info('Step 6: Generating caption...');
     let captionData;
     try {
       captionData = await aiEngine.generateCaption({
-        type: 'image',
+        type: contentType,
         category: selectedCategory,
         keyword: imageData.keyword,
         description: description,
@@ -181,7 +228,7 @@ exports.generateContent = async (req, res) => {
       logger.error('Error generating caption:', error.message);
       captionData = {
         caption: `Transform your space with our ${imageData.keyword}. Modern design meets functionality.`,
-        hashtags: ['#Doors22', '#GlassDoors', '#ModernDesign', '#SouthFlorida'],
+        hashtags: ['#Doors22', '#GlassDoors', '#ModernDesign', '#InteriorDesign'],
         cta: 'Get a free quote at doors22.com/price or call (305) 394-9922'
       };
     }
@@ -191,20 +238,28 @@ exports.generateContent = async (req, res) => {
     if (!finalCaption.toLowerCase().includes(imageData.keyword.toLowerCase())) {
       finalCaption = `${imageData.keyword.charAt(0).toUpperCase() + imageData.keyword.slice(1)} - ${finalCaption}`;
     }
+    logger.info(`Caption: ${finalCaption.substring(0, 60)}...`);
 
-    // Store in Firebase with PENDING status
-    const postId = generatePostId();
+    // Step 7: Store in Firebase with PENDING status
+    logger.info('Step 7: Storing post in Firebase...');
     const postData = {
       postId: postId,
       date: new Date().toISOString().split('T')[0],
-      type: 'image',
+      type: contentType,
       category: selectedCategory,
       keyword: imageData.keyword,
       displayName: imageData.displayName,
-      mediaUrl: imageData.url,
-      thumbnailUrl: imageData.url,
-      cloudinaryPublicId: imageData.publicId,
-      sourceType: 'reference',
+      mediaUrl: uploadResult.url,
+      thumbnailUrl: uploadResult.thumbnailUrl || uploadResult.url,
+      cloudinaryPublicId: uploadResult.publicId,
+      referenceImage: {
+        url: imageData.url,
+        publicId: imageData.publicId,
+        frame: imageData.frame || null,
+        glassType: imageData.glassType || null,
+        panels: imageData.panels || null
+      },
+      midjourneyPrompt: generationResult.prompt,
       productDetails: {
         frame: imageData.frame || null,
         glassType: imageData.glassType || null,
@@ -217,7 +272,12 @@ exports.generateContent = async (req, res) => {
       generatedAt: new Date().toISOString(),
       createdAt: new Date().toISOString(),
       status: 'pending',
-      aspectRatio: '4:5',
+      aspectRatio: contentType === 'video' ? '9:16' : '4:5',
+      format: uploadResult.format,
+      fileSize: uploadResult.fileSize,
+      width: uploadResult.width,
+      height: uploadResult.height,
+      duration: uploadResult.duration || null,
       approvalHistory: [],
       editHistory: [],
       scheduledPostTime: null,
@@ -227,13 +287,18 @@ exports.generateContent = async (req, res) => {
 
     const contentDoc = await db.collection('posts').add(postData);
 
-    logger.info(`Content generated successfully: ${contentDoc.id}`);
+    logger.info('═══════════════════════════════════════════════════════════');
+    logger.info(`  Content Generated Successfully: ${contentDoc.id}`);
+    logger.info(`  Type: ${contentType} | Category: ${selectedCategory}`);
+    logger.info('═══════════════════════════════════════════════════════════');
 
     // Log to logs collection
     await db.collection('logs').add({
       type: 'content_generation',
       postId: contentDoc.id,
       category: selectedCategory,
+      contentType: contentType,
+      referenceImage: imageData.publicId,
       source: 'manual',
       status: 'success',
       timestamp: new Date().toISOString()
@@ -241,7 +306,7 @@ exports.generateContent = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Content generated successfully',
+      message: 'Content generated successfully via Midjourney',
       contentId: contentDoc.id,
       data: {
         ...postData,
@@ -256,12 +321,16 @@ exports.generateContent = async (req, res) => {
     });
 
     // Log error
-    await db.collection('logs').add({
-      type: 'content_generation_error',
-      source: 'manual',
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
+    try {
+      await db.collection('logs').add({
+        type: 'content_generation_error',
+        source: 'manual',
+        error: error.message,
+        timestamp: new Date().toISOString()
+      });
+    } catch (logError) {
+      logger.error('Failed to log error:', logError.message);
+    }
 
     res.status(500).json({
       success: false,
