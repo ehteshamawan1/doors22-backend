@@ -173,6 +173,7 @@ async function postImmediately(post) {
           instagram: !!postResult.instagram,
           facebook: !!postResult.facebook
         },
+        errors: postResult.errors.length > 0 ? postResult.errors : null,
         timestamp: new Date().toISOString()
       });
 

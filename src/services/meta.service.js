@@ -90,7 +90,12 @@ class MetaService {
         }
       );
 
+      logger.info('Instagram container response:', JSON.stringify(containerResponse.data));
+
       const creationId = containerResponse.data.id;
+      if (!creationId) {
+        throw new Error(`Media container creation failed: ${JSON.stringify(containerResponse.data)}`);
+      }
       logger.info(`Media container created: ${creationId}`);
 
       // Step 2: Wait for container to be ready (check status)
