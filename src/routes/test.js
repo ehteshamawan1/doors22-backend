@@ -2,6 +2,28 @@ const express = require('express');
 const router = express.Router();
 const OpenAI = require('openai');
 const logger = require('../utils/logger');
+const metaService = require('../services/meta.service');
+
+// Test Meta API configuration
+router.get('/test-meta', async (req, res) => {
+  try {
+    const configStatus = metaService.getConfigStatus();
+    res.json({
+      success: true,
+      config: configStatus,
+      envVars: {
+        META_PAGE_ACCESS_TOKEN: process.env.META_PAGE_ACCESS_TOKEN ? `${process.env.META_PAGE_ACCESS_TOKEN.substring(0, 20)}...` : 'NOT SET',
+        META_PAGE_ID: process.env.META_PAGE_ID || 'NOT SET',
+        META_IG_USER_ID: process.env.META_IG_USER_ID || 'NOT SET'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
 
 router.get('/test-openai', async (req, res) => {
   try {
