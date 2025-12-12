@@ -272,7 +272,7 @@ class MetaService {
       let response;
 
       if (mediaType === 'video') {
-        // Post video
+        // Post video to Facebook Page
         logger.info('Posting video to Facebook...', {
           pageId: config.pageId ? `${config.pageId.substring(0, 6)}...` : 'NOT SET'
         });
@@ -288,7 +288,8 @@ class MetaService {
           }
         );
       } else {
-        // Post image
+        // Post image to Facebook Page using /photos endpoint (correct for Page tokens)
+        // Note: This requires pages_manage_posts permission
         logger.info('Posting image to Facebook...', {
           pageId: config.pageId ? `${config.pageId.substring(0, 6)}...` : 'NOT SET'
         });
@@ -298,7 +299,8 @@ class MetaService {
           {
             params: {
               url: mediaUrl,
-              caption: caption,
+              message: caption,  // Changed from 'caption' to 'message' - correct parameter name
+              published: true,
               access_token: config.accessToken
             }
           }

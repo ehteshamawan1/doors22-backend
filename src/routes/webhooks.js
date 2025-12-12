@@ -217,6 +217,9 @@ router.post('/meta', async (req, res) => {
   }
 });
 
+// Instagram username for the page (to filter out self-comments)
+const PAGE_INSTAGRAM_USERNAME = process.env.PAGE_INSTAGRAM_USERNAME || 'doors22_';
+
 /**
  * Handle Instagram changes (comments, mentions)
  */
@@ -226,6 +229,15 @@ async function handleInstagramChange(change) {
 
     if (change.field === 'comments') {
       const { id, text, from, media } = change.value;
+
+      // Skip comments from our own page (don't reply to ourselves)
+      const username = from?.username?.toLowerCase() || '';
+      if (username === PAGE_INSTAGRAM_USERNAME.toLowerCase() ||
+          username === 'doors22_' ||
+          username === 'doors22') {
+        logger.info(`Skipping self-comment from @${from?.username}`, { id });
+        return;
+      }
 
       const { category, response, redirected } = classifyAndRespond(text);
 
@@ -304,6 +316,19 @@ async function handleFacebookChange(change) {
 
     if (change.field === 'feed' && change.value?.item === 'comment') {
       const { comment_id, message, from, post_id } = change.value;
+
+      // Skip comments from our own page (don't reply to ourselves)
+      // Check by page ID or page name
+      const pageId = process.env.META_PAGE_ID;
+      const fromId = from?.id;
+      const fromName = from?.name?.toLowerCase() || '';
+
+      if (fromId === pageId ||
+          fromName.includes('doors22') ||
+          fromName.includes('doors 22')) {
+        logger.info(`Skipping self-comment from ${from?.name}`, { comment_id });
+        return;
+      }
 
       const { category, response, redirected } = classifyAndRespond(message);
 
