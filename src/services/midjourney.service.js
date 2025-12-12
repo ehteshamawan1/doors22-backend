@@ -83,6 +83,8 @@ class MidjourneyService {
   /**
    * Build complete Midjourney command with parameters
    * Supports reference images for image-to-image generation
+   * NOTE: For video generation, we first generate an image, then upscale, then animate
+   *       The --video flag is NOT used - that's for recording the generation process
    * @param {string} basePrompt - Base prompt text
    * @param {Object} parameters - Parameters object
    * @param {string} type - 'image' or 'video'
@@ -107,13 +109,12 @@ class MidjourneyService {
     }
 
     // Add aspect ratio
+    // For video, we use 9:16 (vertical) but generate as image first
     const ar = parameters.ar || (type === 'video' ? '9:16' : '4:5');
     command += ` --ar ${ar}`;
 
-    // Add video flag if needed
-    if (type === 'video') {
-      command += ' --video';
-    }
+    // NOTE: We don't add --video flag here anymore
+    // Video generation uses a different workflow: image → upscale → animate → select
 
     // Add style
     if (parameters.style) {
@@ -310,6 +311,266 @@ class MidjourneyService {
     } catch (error) {
       logger.error('Error cancelling generation:', error.message);
       return false;
+    }
+  }
+
+  /**
+   * Generate video using the 4-step Midjourney workflow:
+   * 1. Generate image grid
+   * 2. Upscale one image (U1)
+   * 3. Animate the upscaled image → returns 4 video options
+   * 4. Select one video
+   *
+   * @param {Object} promptData - Prompt information
+   * @returns {Promise<Object>} Complete video generation result with media buffer
+   */
+  async generateVideo(promptData) {
+    let attempt = 0;
+
+    while (attempt < this.maxRetries) {
+      try {
+        attempt++;
+        logger.info(`Video generation attempt ${attempt}/${this.maxRetries}`);
+
+        // Step 1: Generate image grid (same as image, no --video flag)
+        logger.info('Step 1: Generating image grid...');
+        const imagePromptData = {
+          ...promptData,
+          type: 'image' // Always start with image
+        };
+        const imageRequest = await this.sendPrompt(imagePromptData);
+
+        // Step 2: Wait for image grid completion
+        logger.info('Step 2: Waiting for image grid...');
+        const gridResult = await this.waitForCompletion(imageRequest.requestId, 'image');
+
+        // Step 3: Click upscale button (U1) to get single high-res image
+        logger.info('Step 3: Upscaling image (U1)...');
+        const upscaleResult = await this.clickButton(gridResult.messageId, 'U1');
+
+        // Step 4: Wait for upscaled image
+        logger.info('Step 4: Waiting for upscaled image...');
+        const upscaledImage = await this.waitForUpscaleCompletion(upscaleResult.requestId);
+
+        // Step 5: Trigger animate on upscaled image → returns 4 video options
+        logger.info('Step 5: Animating image...');
+        const animateResult = await this.clickAnimateButton(upscaledImage.messageId);
+
+        // Step 6: Wait for animation to complete (returns 4 videos)
+        logger.info('Step 6: Waiting for video options...');
+        const videoGrid = await this.waitForAnimateCompletion(animateResult.requestId);
+
+        // Step 7: Select one of the 4 videos (first one)
+        logger.info('Step 7: Selecting video...');
+        const selectResult = await this.clickButton(videoGrid.messageId, '1');
+
+        // Step 8: Wait for final video
+        logger.info('Step 8: Waiting for final video...');
+        const finalVideo = await this.waitForVideoCompletion(selectResult.requestId);
+
+        // Step 9: Download the video
+        logger.info('Step 9: Downloading video...');
+        const mediaBuffer = await this.downloadMedia(finalVideo.mediaUrl, 'video');
+
+        logger.info(`Video generation completed successfully (${(mediaBuffer.length / 1024 / 1024).toFixed(2)} MB)`);
+
+        return {
+          success: true,
+          type: 'video',
+          prompt: imageRequest.prompt,
+          mediaUrl: finalVideo.mediaUrl,
+          mediaBuffer: mediaBuffer,
+          requestId: imageRequest.requestId,
+          generatedAt: new Date().toISOString(),
+          fileSize: mediaBuffer.length,
+          mock: false
+        };
+
+      } catch (error) {
+        logger.error(`Video generation attempt ${attempt} failed:`, error.message);
+
+        if (attempt >= this.maxRetries) {
+          throw new Error(`Video generation failed after ${this.maxRetries} attempts: ${error.message}`);
+        }
+
+        logger.info(`Retrying in ${this.retryDelay / 1000} seconds...`);
+        await sleep(this.retryDelay);
+      }
+    }
+  }
+
+  /**
+   * Click a button on a Midjourney message (U1-U4, V1-V4, etc.)
+   * @param {string} messageId - Discord message ID
+   * @param {string} buttonId - Button identifier (U1, U2, U3, U4, V1, etc.)
+   * @returns {Promise<Object>} Button click result
+   */
+  async clickButton(messageId, buttonId) {
+    try {
+      logger.info(`Clicking button ${buttonId} on message ${messageId}...`);
+
+      const response = await axios.post(`${this.discordBotUrl}/api/midjourney/button`, {
+        messageId: messageId,
+        buttonId: buttonId,
+        channelId: process.env.DISCORD_CHANNEL_ID
+      });
+
+      if (!response.data.success) {
+        throw new Error(response.data.error || 'Failed to click button');
+      }
+
+      logger.info(`Button ${buttonId} clicked successfully`);
+
+      return {
+        requestId: response.data.requestId,
+        messageId: messageId,
+        buttonId: buttonId,
+        status: 'pending'
+      };
+    } catch (error) {
+      logger.error(`Error clicking button ${buttonId}:`, error.message);
+      throw new Error(`Failed to click button: ${error.message}`);
+    }
+  }
+
+  /**
+   * Click the animate button on an upscaled image
+   * @param {string} messageId - Discord message ID of the upscaled image
+   * @returns {Promise<Object>} Animation request result
+   */
+  async clickAnimateButton(messageId) {
+    try {
+      logger.info(`Triggering animate on message ${messageId}...`);
+
+      const response = await axios.post(`${this.discordBotUrl}/api/midjourney/animate`, {
+        messageId: messageId,
+        channelId: process.env.DISCORD_CHANNEL_ID
+      });
+
+      if (!response.data.success) {
+        throw new Error(response.data.error || 'Failed to trigger animate');
+      }
+
+      logger.info('Animate triggered successfully');
+
+      return {
+        requestId: response.data.requestId,
+        messageId: messageId,
+        status: 'pending'
+      };
+    } catch (error) {
+      logger.error('Error triggering animate:', error.message);
+      throw new Error(`Failed to trigger animate: ${error.message}`);
+    }
+  }
+
+  /**
+   * Wait for upscale operation to complete
+   * @param {string} requestId - Upscale request ID
+   * @param {number} timeoutMs - Max wait time
+   * @returns {Promise<Object>} Upscaled image result
+   */
+  async waitForUpscaleCompletion(requestId, timeoutMs = 120000) {
+    return this.waitForCompletion(requestId, 'image', timeoutMs);
+  }
+
+  /**
+   * Wait for animate operation to complete (returns 4 video options)
+   * @param {string} requestId - Animate request ID
+   * @param {number} timeoutMs - Max wait time (longer for video)
+   * @returns {Promise<Object>} Animation result with video options
+   */
+  async waitForAnimateCompletion(requestId, timeoutMs = 300000) {
+    try {
+      logger.info(`Monitoring animate progress for ${requestId}...`);
+
+      const startTime = Date.now();
+      const pollInterval = 10000; // Poll every 10 seconds for video
+
+      while (Date.now() - startTime < timeoutMs) {
+        try {
+          const response = await axios.get(`${this.discordBotUrl}/api/midjourney/status/${requestId}`);
+
+          if (response.data.status === 'completed') {
+            logger.info('Animation completed successfully');
+            return {
+              status: 'completed',
+              messageId: response.data.messageId,
+              videoOptions: response.data.videoOptions || [],
+              completedAt: new Date().toISOString()
+            };
+          } else if (response.data.status === 'failed') {
+            throw new Error(response.data.error || 'Animation failed');
+          }
+
+          logger.info(`Animation still in progress... (${Math.round((Date.now() - startTime) / 1000)}s elapsed)`);
+          await sleep(pollInterval);
+
+        } catch (error) {
+          if (error.code === 'ECONNREFUSED') {
+            logger.warn('Discord bot not reachable during polling');
+            await sleep(pollInterval);
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      throw new Error(`Animation timeout after ${timeoutMs / 1000} seconds`);
+
+    } catch (error) {
+      logger.error('Error monitoring animation:', error.message);
+      throw new Error(`Failed to monitor animation: ${error.message}`);
+    }
+  }
+
+  /**
+   * Wait for final video selection to complete
+   * @param {string} requestId - Video selection request ID
+   * @param {number} timeoutMs - Max wait time
+   * @returns {Promise<Object>} Final video result
+   */
+  async waitForVideoCompletion(requestId, timeoutMs = 180000) {
+    try {
+      logger.info(`Monitoring video selection for ${requestId}...`);
+
+      const startTime = Date.now();
+      const pollInterval = 5000;
+
+      while (Date.now() - startTime < timeoutMs) {
+        try {
+          const response = await axios.get(`${this.discordBotUrl}/api/midjourney/status/${requestId}`);
+
+          if (response.data.status === 'completed') {
+            logger.info('Video selection completed successfully');
+            return {
+              status: 'completed',
+              mediaUrl: response.data.mediaUrl,
+              messageId: response.data.messageId,
+              completedAt: new Date().toISOString()
+            };
+          } else if (response.data.status === 'failed') {
+            throw new Error(response.data.error || 'Video selection failed');
+          }
+
+          logger.info(`Video selection still in progress... (${Math.round((Date.now() - startTime) / 1000)}s elapsed)`);
+          await sleep(pollInterval);
+
+        } catch (error) {
+          if (error.code === 'ECONNREFUSED') {
+            logger.warn('Discord bot not reachable during polling');
+            await sleep(pollInterval);
+            continue;
+          }
+          throw error;
+        }
+      }
+
+      throw new Error(`Video selection timeout after ${timeoutMs / 1000} seconds`);
+
+    } catch (error) {
+      logger.error('Error monitoring video selection:', error.message);
+      throw new Error(`Failed to monitor video selection: ${error.message}`);
     }
   }
 }

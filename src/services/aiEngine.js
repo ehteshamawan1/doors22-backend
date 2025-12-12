@@ -219,6 +219,24 @@ Return JSON:
       const productContext = description || concept || 'Glass doors and partitions';
       const categoryName = category ? this.getCategoryDisplayName(category) : 'glass doors';
 
+      // Category-specific setting context
+      let settingContext = 'Modern commercial office or residential space';
+      let additionalContext = '';
+
+      if (category === 'home_offices') {
+        settingContext = 'Cozy residential HOME OFFICE space';
+        additionalContext = `
+CRITICAL HOME OFFICE REQUIREMENTS:
+- Setting: Inside a HOUSE or APARTMENT, NOT a commercial building
+- Space: Small personal workspace area, NOT an open floor plan or cubicle farm
+- Furniture: Residential home furniture (desk in corner of room, near window)
+- Environment: Cozy, warm, personal - include plants, books, personal items, home decor
+- Background: Visible home elements (living room, bedroom area, residential windows with natural light)
+- Scale: Single person workspace, intimate and personal setting
+- Style: Warm residential interior design, NOT sterile corporate aesthetic
+- DO NOT show: Large office buildings, multiple workstations, corporate environments, fluorescent lighting, cubicle farms`;
+      }
+
       const prompt = `Create a detailed Midjourney prompt for a high-quality professional photograph showcasing ${categoryName} for Doors22.
 
 ${referenceUrl ? `IMPORTANT: This prompt will be used with a REFERENCE IMAGE for image-to-image generation.
@@ -229,6 +247,7 @@ ${concept ? `Specific concept: ${concept}` : ''}
 
 Product Details: ${productContext}
 ${keyword ? `Key product: ${keyword}` : ''}
+${additionalContext}
 
 Trending styles: ${trendData?.imagePostStyles?.join(', ') || 'Professional photography, before/after, modern office spaces'}
 
@@ -237,7 +256,7 @@ ${type === 'video' ? 'Note: This image will later be used as a base frame for vi
 
 Requirements:
 - High-quality professional photography style
-- Modern commercial office or residential space
+- ${settingContext}
 - Natural lighting emphasis
 - Clean, minimalist aesthetic
 - Professional composition with the ${keyword || 'glass doors/partitions'} as the focal point

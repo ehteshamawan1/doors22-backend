@@ -4,8 +4,10 @@ const crypto = require('crypto');
 const { db } = require('../config/firebase');
 const logger = require('../utils/logger');
 
-// Verify token for Meta webhook verification
-const VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN || process.env.WEBHOOK_VERIFY_TOKEN || '1H94NdfjrEcAYG895j$v';
+// Verify tokens for Meta webhook verification
+// Instagram uses the existing token, Facebook can use a separate token
+const INSTAGRAM_VERIFY_TOKEN = process.env.META_WEBHOOK_VERIFY_TOKEN || process.env.WEBHOOK_VERIFY_TOKEN || '1H94NdfjrEcAYG895j$v';
+const FACEBOOK_VERIFY_TOKEN = process.env.META_FB_WEBHOOK_VERIFY_TOKEN || process.env.META_WEBHOOK_VERIFY_TOKEN || 'doors22_fb_webhook_2024';
 
 /**
  * GET /webhooks/instagram
@@ -18,7 +20,7 @@ router.get('/instagram', (req, res) => {
 
   logger.info('Instagram webhook verification attempt', { mode, token: token ? '***' : 'none' });
 
-  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+  if (mode === 'subscribe' && token === INSTAGRAM_VERIFY_TOKEN) {
     logger.info('Instagram webhook verified successfully');
     return res.status(200).send(challenge);
   }
@@ -38,7 +40,7 @@ router.get('/facebook', (req, res) => {
 
   logger.info('Facebook webhook verification attempt', { mode, token: token ? '***' : 'none' });
 
-  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+  if (mode === 'subscribe' && token === FACEBOOK_VERIFY_TOKEN) {
     logger.info('Facebook webhook verified successfully');
     return res.status(200).send(challenge);
   }
@@ -58,7 +60,8 @@ router.get('/meta', (req, res) => {
 
   logger.info('Meta webhook verification attempt', { mode, token: token ? '***' : 'none' });
 
-  if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+  // Accept either Instagram or Facebook verify token for unified endpoint
+  if (mode === 'subscribe' && (token === INSTAGRAM_VERIFY_TOKEN || token === FACEBOOK_VERIFY_TOKEN)) {
     logger.info('Meta webhook verified successfully');
     return res.status(200).send(challenge);
   }

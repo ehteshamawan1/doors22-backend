@@ -8,24 +8,51 @@ const cloudinaryService = require('./cloudinary.service');
 const logger = require('../utils/logger');
 
 // Product catalog structure with keywords and Cloudinary folders
+// Each category has multiple keyword variations for SEO diversity
 const PRODUCT_CATALOG = {
   room_dividers: {
-    keyword: 'sliding glass room divider',
+    keywords: [
+      'sliding glass room dividers',
+      'glass room divider',
+      'glass room separator',
+      'sliding glass walls for interior',
+      'sliding glass room divider',
+      'custom sliding glass room divider'
+    ],
+    keyword: 'sliding glass room divider', // Default/fallback
     cloudinaryFolder: 'doors22/reference/room_dividers',
     displayName: 'Room Dividers',
     description: 'Sliding glass room dividers for residential and commercial spaces'
   },
   closet_doors: {
-    keyword: 'sliding glass closet door',
+    keywords: [
+      'sliding glass closet doors',
+      'glass closet doors',
+      'custom glass closet doors',
+      'interior glass sliding closet'
+    ],
+    keyword: 'sliding glass closet door', // Default/fallback
     cloudinaryFolder: 'doors22/reference/closet_doors',
     displayName: 'Closet Doors',
     description: 'Sliding glass closet doors with modern aluminum frames'
   },
   home_offices: {
-    keyword: 'sliding glass home office',
+    keywords: [
+      'glass office partitions',
+      'glass office walls',
+      'sliding glass office partitions',
+      'sliding glass office walls',
+      'glass office system',
+      'glass partition walls',
+      'glass cubicles',
+      'sliding glass cubicles',
+      'glass office dividers',
+      'glass wall system'
+    ],
+    keyword: 'glass office partitions', // Default/fallback
     cloudinaryFolder: 'doors22/reference/home_offices',
     displayName: 'Home Offices',
-    description: 'Glass partitions and doors for home office spaces'
+    description: 'Glass partitions and doors for HOME office spaces (residential)'
   }
 };
 
@@ -54,12 +81,34 @@ class ReferenceImagesService {
   }
 
   /**
-   * Get keyword for a category
+   * Get default keyword for a category
    * @param {string} category - Category key
    * @returns {string} SEO keyword for the category
    */
   getKeyword(category) {
     return PRODUCT_CATALOG[category]?.keyword || 'sliding glass door';
+  }
+
+  /**
+   * Get a random keyword from the category's keyword variations
+   * Used for SEO diversity in captions
+   * @param {string} category - Category key
+   * @returns {string} Random SEO keyword for the category
+   */
+  getRandomKeyword(category) {
+    const catalog = PRODUCT_CATALOG[category];
+    if (!catalog) return 'sliding glass door';
+
+    // If keywords array exists and has items, pick a random one
+    if (catalog.keywords && catalog.keywords.length > 0) {
+      const randomIndex = Math.floor(Math.random() * catalog.keywords.length);
+      const selectedKeyword = catalog.keywords[randomIndex];
+      logger.info(`Selected random keyword for ${category}: "${selectedKeyword}"`);
+      return selectedKeyword;
+    }
+
+    // Fallback to default keyword
+    return catalog.keyword || 'sliding glass door';
   }
 
   /**
@@ -136,13 +185,16 @@ class ReferenceImagesService {
     // Parse metadata from publicId if available
     const metadata = this.parseImageMetadata(selectedImage.publicId);
 
+    // Get a random keyword for SEO diversity
+    const randomKeyword = this.getRandomKeyword(category);
+
     logger.info(`Selected random image for ${category}: ${selectedImage.publicId}`);
 
     return {
       url: selectedImage.url,
       publicId: selectedImage.publicId,
       category: category,
-      keyword: catalog.keyword,
+      keyword: randomKeyword, // Use random keyword instead of static
       displayName: catalog.displayName,
       ...metadata
     };

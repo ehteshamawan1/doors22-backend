@@ -161,16 +161,36 @@ async function generateForCategory(category, trendData) {
   // Step 4: Generate with Midjourney (includes upscaling)
   // Format: "{referenceUrl} {prompt} --iw 2 --ar 4:5 --v 6"
   logger.info(`Step 4: Generating ${contentType} with Midjourney...`);
-  const generationResult = await midjourneyService.generate({
-    prompt: promptData.prompt,
-    type: contentType,
-    referenceUrl: imageData.url,
-    parameters: {
-      ...promptData.parameters,
-      iw: 2  // High image weight for product accuracy
-    }
-  });
-  logger.info(`${contentType} generated successfully (${(generationResult.fileSize / 1024 / 1024).toFixed(2)} MB)`);
+
+  let generationResult;
+
+  if (contentType === 'video') {
+    // Video generation workflow: imagine → upscale → animate → select
+    // This is a 4-step process that creates a 5-10 second animated video
+    logger.info('Using video generation workflow (imagine → upscale → animate → select)...');
+    generationResult = await midjourneyService.generateVideo({
+      prompt: promptData.prompt,
+      referenceUrl: imageData.url,
+      parameters: {
+        ...promptData.parameters,
+        iw: 2  // High image weight for product accuracy
+      }
+    });
+  } else {
+    // Image generation workflow: imagine → upscale
+    generationResult = await midjourneyService.generate({
+      prompt: promptData.prompt,
+      type: 'image',
+      referenceUrl: imageData.url,
+      parameters: {
+        ...promptData.parameters,
+        iw: 2  // High image weight for product accuracy
+      }
+    });
+  }
+
+  const fileSizeMB = generationResult.fileSize ? (generationResult.fileSize / 1024 / 1024).toFixed(2) : 'unknown';
+  logger.info(`${contentType} generated successfully (${fileSizeMB} MB)`);
 
   // Step 5: Upload to Cloudinary
   const postId = generatePostId();
