@@ -33,7 +33,7 @@ class MidjourneyService {
     try {
       logger.info(`Sending ${promptData.type} prompt to Midjourney...`);
 
-      const { prompt, type, parameters, referenceUrl } = promptData;
+      const { prompt, type, parameters, referenceUrl, manualUpscale } = promptData;
 
       // Build full Midjourney command (with optional reference image)
       const fullPrompt = this.buildMidjourneyCommand(prompt, parameters, type, referenceUrl);
@@ -48,7 +48,8 @@ class MidjourneyService {
       const response = await axios.post(`${this.discordBotUrl}/api/midjourney/imagine`, {
         prompt: fullPrompt,
         type: type,
-        channelId: process.env.DISCORD_CHANNEL_ID
+        channelId: process.env.DISCORD_CHANNEL_ID,
+        manualUpscale: Boolean(manualUpscale)
       });
 
       if (!response.data.success) {
@@ -157,6 +158,7 @@ class MidjourneyService {
             return {
               status: 'completed',
               mediaUrl: response.data.mediaUrl,
+              messageId: response.data.messageId,
               type: type,
               completedAt: new Date().toISOString()
             };
@@ -336,7 +338,8 @@ class MidjourneyService {
         logger.info('Step 1: Generating image grid...');
         const imagePromptData = {
           ...promptData,
-          type: 'image' // Always start with image
+          type: 'image',
+          manualUpscale: true // Let backend handle upscale + animate workflow
         };
         const imageRequest = await this.sendPrompt(imagePromptData);
 
@@ -346,7 +349,7 @@ class MidjourneyService {
 
         // Step 3: Click upscale button (U1) to get single high-res image
         logger.info('Step 3: Upscaling image (U1)...');
-        const upscaleResult = await this.clickButton(gridResult.messageId, 'U1');
+        const upscaleResult = await this.clickButton(gridResult.messageId, 'U1', 'image');
 
         // Step 4: Wait for upscaled image
         logger.info('Step 4: Waiting for upscaled image...');
@@ -362,7 +365,11 @@ class MidjourneyService {
 
         // Step 7: Select one of the 4 videos (first one)
         logger.info('Step 7: Selecting video...');
-        const selectResult = await this.clickButton(videoGrid.messageId, '1');
+        const selectResult = await this.clickButtonWithFallback(
+          videoGrid.messageId,
+          ['1', 'V1'],
+          'video'
+        );
 
         // Step 8: Wait for final video
         logger.info('Step 8: Waiting for final video...');
@@ -405,14 +412,15 @@ class MidjourneyService {
    * @param {string} buttonId - Button identifier (U1, U2, U3, U4, V1, etc.)
    * @returns {Promise<Object>} Button click result
    */
-  async clickButton(messageId, buttonId) {
+  async clickButton(messageId, buttonId, expectedType) {
     try {
       logger.info(`Clicking button ${buttonId} on message ${messageId}...`);
 
       const response = await axios.post(`${this.discordBotUrl}/api/midjourney/button`, {
         messageId: messageId,
         buttonId: buttonId,
-        channelId: process.env.DISCORD_CHANNEL_ID
+        channelId: process.env.DISCORD_CHANNEL_ID,
+        expectedType: expectedType
       });
 
       if (!response.data.success) {
@@ -428,9 +436,32 @@ class MidjourneyService {
         status: 'pending'
       };
     } catch (error) {
-      logger.error(`Error clicking button ${buttonId}:`, error.message);
-      throw new Error(`Failed to click button: ${error.message}`);
+      const apiError = error.response?.data?.error;
+      const message = apiError || error.message;
+      logger.error(`Error clicking button ${buttonId}:`, message);
+      throw new Error(`Failed to click button: ${message}`);
     }
+  }
+
+  /**
+   * Try multiple button IDs until one succeeds
+   * @param {string} messageId - Discord message ID
+   * @param {string[]} buttonIds - Candidate button identifiers
+   * @param {string} expectedType - Expected media type after click
+   * @returns {Promise<Object>} Button click result
+   */
+  async clickButtonWithFallback(messageId, buttonIds, expectedType) {
+    let lastError;
+
+    for (const buttonId of buttonIds) {
+      try {
+        return await this.clickButton(messageId, buttonId, expectedType);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+
+    throw lastError;
   }
 
   /**
