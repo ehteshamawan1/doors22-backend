@@ -192,15 +192,25 @@ exports.generateContent = async (req, res) => {
 
     // Step 4: Generate with Midjourney (includes upscaling)
     logger.info(`Step 4: Generating ${contentType} with Midjourney...`);
-    const generationResult = await midjourneyService.generate({
-      prompt: promptData.prompt,
-      type: contentType,
-      referenceUrl: imageData.url,
-      parameters: {
-        ...promptData.parameters,
-        iw: 2  // High image weight for product accuracy
-      }
-    });
+    const generationResult = contentType === 'video'
+      ? await midjourneyService.generateVideo({
+          prompt: promptData.prompt,
+          type: contentType,
+          referenceUrl: imageData.url,
+          parameters: {
+            ...promptData.parameters,
+            iw: 2
+          }
+        })
+      : await midjourneyService.generate({
+          prompt: promptData.prompt,
+          type: contentType,
+          referenceUrl: imageData.url,
+          parameters: {
+            ...promptData.parameters,
+            iw: 2  // High image weight for product accuracy
+          }
+        });
     logger.info(`${contentType} generated successfully (${(generationResult.fileSize / 1024 / 1024).toFixed(2)} MB)`);
 
     // Step 5: Upload to Cloudinary

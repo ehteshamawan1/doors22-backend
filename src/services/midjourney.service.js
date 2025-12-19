@@ -141,7 +141,7 @@ class MidjourneyService {
    * @param {number} timeoutMs - Max wait time in milliseconds
    * @returns {Promise<Object>} Generation result
    */
-  async waitForCompletion(requestId, type, timeoutMs = 300000) {
+  async waitForCompletion(requestId, type, timeoutMs = 600000) {
     try {
       logger.info(`Monitoring generation progress for ${requestId}...`);
 
