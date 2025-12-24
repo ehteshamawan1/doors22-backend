@@ -2,10 +2,11 @@
  * Content Generation Cron Job
  *
  * Runs daily at 3:15 AM UTC (10:15 PM EST)
- * Generates 3 posts - one for each product category:
+ * Generates 4 posts - one for each product category:
  * - Room Dividers
  * - Closet Doors
- * - Home Offices
+ * - Home Offices (residential)
+ * - Office Partitions (commercial)
  *
  * Uses reference images as INPUT to Midjourney for product accuracy.
  * Midjourney generates NEW images that look similar to the reference.
@@ -20,11 +21,12 @@ const referenceImagesService = require('../services/referenceImages.service');
 const { db } = require('../config/firebase');
 const { generatePostId } = require('../utils/helpers');
 
-// Define the 3 categories for daily generation
+// Define the 4 categories for daily generation
 const DAILY_CATEGORIES = [
-  'room_dividers',   // 1x Room Dividers
-  'closet_doors',    // 1x Closet Doors
-  'home_offices'     // 1x Home Offices
+  'room_dividers',      // 1x Room Dividers
+  'closet_doors',       // 1x Closet Doors
+  'home_offices',       // 1x Home Offices (residential)
+  'office_partitions'   // 1x Office Partitions (commercial)
 ];
 
 /**
@@ -34,7 +36,7 @@ const DAILY_CATEGORIES = [
 async function run() {
   try {
     logger.info('═══════════════════════════════════════════════════════════');
-    logger.info('  Content Generation Started - 3 Categories (Midjourney)');
+    logger.info('  Content Generation Started - 4 Categories (Midjourney)');
     logger.info('═══════════════════════════════════════════════════════════');
 
     const startTime = Date.now();

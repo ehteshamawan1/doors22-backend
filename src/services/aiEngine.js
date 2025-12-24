@@ -191,7 +191,8 @@ Return JSON:
     const keywords = {
       'room_dividers': 'sliding glass room divider',
       'closet_doors': 'sliding glass closet door',
-      'home_offices': 'sliding glass home office'
+      'home_offices': 'sliding glass home office',
+      'office_partitions': 'corporate glass partitions'
     };
     return keywords[category] || null;
   }
@@ -235,7 +236,29 @@ CRITICAL HOME OFFICE REQUIREMENTS:
 - Scale: Single person workspace, intimate and personal setting
 - Style: Warm residential interior design, NOT sterile corporate aesthetic
 - DO NOT show: Large office buildings, multiple workstations, corporate environments, fluorescent lighting, cubicle farms`;
+      } else if (category === 'office_partitions') {
+        settingContext = 'Professional corporate office or commercial workspace';
+        additionalContext = `
+CRITICAL OFFICE PARTITIONS REQUIREMENTS:
+- Setting: Inside a CORPORATE OFFICE or COMMERCIAL BUILDING
+- Space: Open floor plan, modern office environment, cubicle areas, conference rooms
+- Furniture: Commercial office furniture (workstations, meeting tables, office chairs)
+- Environment: Professional, clean, corporate aesthetic - modern office design
+- Background: Corporate office elements (multiple workstations, office lighting, commercial flooring)
+- Scale: Multi-person workspace, professional commercial setting
+- Style: Contemporary corporate interior design, professional atmosphere
+- Include: Glass partitions creating private workspaces, meeting rooms, or collaborative areas
+- DO NOT show: Residential elements, home furniture, cozy personal spaces`;
       }
+
+      // Bottom track rail is CRITICAL for all categories
+      const bottomTrackInstruction = `
+CRITICAL PRODUCT REQUIREMENT - APPLIES TO ALL CATEGORIES:
+- The sliding glass doors/partitions MUST be mounted on a BOTTOM TRACK RAIL system
+- The floor-mounted track rail must be CLEARLY VISIBLE in the image
+- This is how the product actually works - it slides on a track on the floor
+- DO NOT show ceiling-hung or frameless systems
+- The bottom track is a key feature that must be shown`;
 
       const prompt = `Create a detailed Midjourney prompt for a high-quality professional photograph showcasing ${categoryName} for Doors22.
 
@@ -247,6 +270,7 @@ ${concept ? `Specific concept: ${concept}` : ''}
 
 Product Details: ${productContext}
 ${keyword ? `Key product: ${keyword}` : ''}
+${bottomTrackInstruction}
 ${additionalContext}
 
 Trending styles: ${trendData?.imagePostStyles?.join(', ') || 'Professional photography, before/after, modern office spaces'}
@@ -261,6 +285,8 @@ Requirements:
 - Clean, minimalist aesthetic
 - Professional composition with the ${keyword || 'glass doors/partitions'} as the focal point
 - Maintain product authenticity (same frame style, glass type as reference)
+- **CRITICAL: Product MUST show bottom track rail system** (sliding doors on floor-mounted track)
+- Bottom track clearly visible on the floor
 - NO motion, animation, or video-related descriptions
 - Aspect ratio: ${type === 'video' ? '9:16 (vertical for video)' : '4:5 (Instagram feed optimized)'}
 
@@ -323,7 +349,8 @@ Return JSON:
     const names = {
       'room_dividers': 'Room Dividers',
       'closet_doors': 'Closet Doors',
-      'home_offices': 'Home Offices'
+      'home_offices': 'Home Offices',
+      'office_partitions': 'Office Partitions'
     };
     return names[category] || 'Glass Doors';
   }

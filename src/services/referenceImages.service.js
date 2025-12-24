@@ -53,6 +53,24 @@ const PRODUCT_CATALOG = {
     cloudinaryFolder: 'doors22/reference/home_offices',
     displayName: 'Home Offices',
     description: 'Glass partitions and doors for HOME office spaces (residential)'
+  },
+  office_partitions: {
+    keywords: [
+      'corporate glass partitions',
+      'commercial glass walls',
+      'office glass partition system',
+      'commercial sliding glass partitions',
+      'corporate office dividers',
+      'glass wall partitions',
+      'commercial glass office walls',
+      'corporate workspace dividers',
+      'glass partition system',
+      'commercial office glass walls'
+    ],
+    keyword: 'corporate glass partitions', // Default/fallback
+    cloudinaryFolder: 'doors22/reference/home_offices', // REUSE home_offices images
+    displayName: 'Office Partitions',
+    description: 'Glass partitions and walls for CORPORATE/COMMERCIAL office spaces'
   }
 };
 
