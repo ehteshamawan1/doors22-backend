@@ -52,7 +52,7 @@ router.get('/test-openai', async (req, res) => {
     });
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
       messages: [{ role: 'user', content: 'Say "test successful"' }],
       max_tokens: 10
     });

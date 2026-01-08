@@ -9,6 +9,28 @@
  */
 
 const openai = require('../config/openai');
+
+const PRIMARY_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const FALLBACK_MODEL = process.env.OPENAI_FALLBACK_MODEL;
+
+async function createChatCompletion(payload) {
+  try {
+    return await openai.chat.completions.create({
+      ...payload,
+      model: PRIMARY_MODEL
+    });
+  } catch (error) {
+    const status = error?.status || error?.response?.status;
+    const isRateLimit = status === 429 || error?.code === 429;
+    if (isRateLimit && FALLBACK_MODEL) {
+      return await openai.chat.completions.create({
+        ...payload,
+        model: FALLBACK_MODEL
+      });
+    }
+    throw error;
+  }
+}
 const logger = require('../utils/logger');
 const { db } = require('../config/firebase');
 
@@ -54,8 +76,7 @@ Return a JSON object with this structure:
 
 Provide actionable insights for creating engaging content.`;
 
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+      const response = await createChatCompletion({
         messages: [
           {
             role: 'system',
@@ -147,8 +168,7 @@ Return JSON:
   "fullPost": "Complete post with caption + hashtags + CTA combined"
 }`;
 
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+      const response = await createChatCompletion({
         messages: [
           {
             role: 'system',
@@ -303,8 +323,7 @@ Return JSON:
   "tags": ["keyword1", "keyword2", ...]
 }`;
 
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+      const response = await createChatCompletion({
         messages: [
           {
             role: 'system',
@@ -410,8 +429,7 @@ Return JSON:
   "requiresHumanFollowup": false
 }`;
 
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+      const response = await createChatCompletion({
         messages: [
           {
             role: 'system',
@@ -488,8 +506,7 @@ Return JSON:
   "estimatedEngagement": "high|medium|low"
 }`;
 
-      const response = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+      const response = await createChatCompletion({
         messages: [
           {
             role: 'system',
