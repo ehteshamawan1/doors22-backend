@@ -63,7 +63,6 @@ exports.getPendingPosts = async (req, res) => {
   try {
     const snapshot = await db.collection('posts')
       .where('status', '==', 'pending')
-      .orderBy('createdAt', 'desc')
       .get();
 
     const posts = [];
@@ -72,6 +71,13 @@ exports.getPendingPosts = async (req, res) => {
         id: doc.id,
         ...doc.data()
       });
+    });
+
+    // Sort locally to avoid excluding legacy docs missing createdAt
+    posts.sort((a, b) => {
+      const aTime = new Date(a.createdAt || a.generatedAt || 0).getTime();
+      const bTime = new Date(b.createdAt || b.generatedAt || 0).getTime();
+      return bTime - aTime;
     });
 
     logger.info(`Retrieved ${posts.length} pending posts`);

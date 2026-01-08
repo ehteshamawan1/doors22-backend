@@ -20,6 +20,24 @@ class MidjourneyService {
     this.retryDelay = 5000; // 5 seconds
   }
 
+  async getRequestSnapshot(requestId) {
+    try {
+      const response = await axios.get(`${this.discordBotUrl}/api/midjourney/requests`, {
+        timeout: 5000
+      });
+      const pending = response.data?.pending || [];
+      const completed = response.data?.completed || [];
+      const inPending = pending.some(req => req.requestId === requestId);
+      const inCompleted = completed.some(req => req.requestId === requestId);
+
+      logger.info(`Midjourney request snapshot: pending=${pending.length}, completed=${completed.length}, requestId=${requestId} inPending=${inPending} inCompleted=${inCompleted}`);
+      return { pendingCount: pending.length, completedCount: completed.length, inPending, inCompleted };
+    } catch (error) {
+      logger.warn('Failed to fetch Midjourney request snapshot:', error.message);
+      return null;
+    }
+  }
+
   /**
    * Send imagine command to Midjourney via Discord bot
    * @param {Object} promptData - Prompt information
@@ -191,6 +209,7 @@ class MidjourneyService {
         }
       }
 
+      await this.getRequestSnapshot(requestId);
       throw new Error(`Generation timeout after ${timeoutMs / 1000} seconds`);
 
     } catch (error) {
