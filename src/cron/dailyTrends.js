@@ -15,6 +15,16 @@ async function run() {
 
     const startTime = Date.now();
 
+    // Check system settings
+    const settingsDoc = await db.collection('settings').doc('system_settings').get();
+    if (settingsDoc.exists) {
+      const settings = settingsDoc.data();
+      if (settings.modules && settings.modules.trendAnalysisEnabled === false) {
+        logger.info('Trend analysis module is disabled in settings. Skipping.');
+        return { success: true, message: 'Module disabled' };
+      }
+    }
+
     // Analyze trends (includes images + videos)
     logger.info('Analyzing trends with AI...');
     const trendData = await aiEngine.analyzeTrends({ includeVideos: true });

@@ -68,7 +68,7 @@ const PRODUCT_CATALOG = {
       'commercial office glass walls'
     ],
     keyword: 'corporate glass partitions', // Default/fallback
-    cloudinaryFolder: 'doors22/reference/home_offices', // REUSE home_offices images
+    cloudinaryFolder: 'doors22/reference/office_partitions',
     displayName: 'Office Partitions',
     description: 'Glass partitions and walls for CORPORATE/COMMERCIAL office spaces'
   }

@@ -19,14 +19,13 @@ exports.getSettings = async (req, res) => {
     if (!settingsDoc.exists) {
       // Return default settings if none exist
       const defaultSettings = {
-        postingTime: '17:00',
+        postingTime: '12:00',
         contentMix: {
           images: 70,
           videos: 30
         },
         brandVoice: 'professional-inspirational',
         autoApproval: false,
-        emailNotifications: true,
         modules: {
           trendAnalysisEnabled: true,
           contentGenerationEnabled: true,
@@ -70,7 +69,6 @@ exports.updateSettings = async (req, res) => {
       contentMix,
       brandVoice,
       autoApproval,
-      emailNotifications,
       modules
     } = req.body;
 
@@ -79,7 +77,6 @@ exports.updateSettings = async (req, res) => {
       contentMix,
       brandVoice,
       autoApproval,
-      emailNotifications,
       modules,
       updatedAt: new Date().toISOString()
     };

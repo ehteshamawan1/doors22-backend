@@ -11,25 +11,45 @@
 const openai = require('../config/openai');
 
 const PRIMARY_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-const FALLBACK_MODEL = process.env.OPENAI_FALLBACK_MODEL;
+const FALLBACK_MODELS = [
+  process.env.OPENAI_FALLBACK_MODEL,
+  'gpt-4o',
+  'gpt-4-turbo',
+  'gpt-3.5-turbo'
+].filter(Boolean);
 
 async function createChatCompletion(payload) {
-  try {
-    return await openai.chat.completions.create({
-      ...payload,
-      model: PRIMARY_MODEL
-    });
-  } catch (error) {
-    const status = error?.status || error?.response?.status;
-    const isRateLimit = status === 429 || error?.code === 429;
-    if (isRateLimit && FALLBACK_MODEL) {
+  const models = [PRIMARY_MODEL, ...FALLBACK_MODELS];
+  let lastError = null;
+
+  for (const model of models) {
+    try {
+      logger.info(`Attempting OpenAI completion with model: ${model}`);
       return await openai.chat.completions.create({
         ...payload,
-        model: FALLBACK_MODEL
+        model: model
       });
+    } catch (error) {
+      lastError = error;
+      const status = error?.status || error?.response?.status;
+      const isRateLimit = status === 429 || error?.code === 429;
+      
+      if (isRateLimit) {
+        logger.warn(`Rate limit hit for model ${model}. Trying next fallback...`);
+        // Optional: wait a bit?
+        continue;
+      }
+      
+      // If it's not a rate limit, we might want to fail fast or try another model depending on error
+      logger.error(`OpenAI error with model ${model}: ${error.message}`);
+      if (status >= 500) {
+        continue; // Try next model on server error
+      }
+      throw error;
     }
-    throw error;
   }
+
+  throw lastError;
 }
 const logger = require('../utils/logger');
 const { db } = require('../config/firebase');
@@ -116,13 +136,14 @@ Provide actionable insights for creating engaging content.`;
    * @param {string} contentData.category - Product category (room_dividers, closet_doors, home_offices)
    * @param {string} contentData.keyword - Required SEO keyword to include
    * @param {Object} contentData.trendData - Trend analysis data
+   * @param {string} contentData.brandVoice - Brand voice/tone setting
    * @returns {Promise<Object>} Generated caption and hashtags
    */
   async generateCaption(contentData) {
     try {
       logger.info(`Generating caption for ${contentData.type}...`);
 
-      const { type, description, trendData, concept, category, keyword } = contentData;
+      const { type, description, trendData, concept, category, keyword, brandVoice } = contentData;
       const contentDescription = description || concept || 'Glass doors and partitions installation';
 
       // Determine required keyword based on category
@@ -138,13 +159,15 @@ The caption MUST naturally include the exact phrase: "${requiredKeyword}"
 This is a required SEO keyword that must appear in the caption text.`
         : '';
 
+      const tone = brandVoice || trendData?.captionTone || 'professional-inspirational';
+
       const prompt = `Create an engaging ${type === 'video' ? 'reel/video' : 'image'} caption for Instagram and Facebook for Doors22, a glass doors and partitions company.
 
 Content: ${contentDescription}${keywordInstruction}
 
 Requirements:
 - ${type === 'video' ? '40-60 characters' : '120-150 characters'} main caption (engaging hook)
-- Professional yet approachable tone
+- Tone: ${tone}
 ${requiredKeyword ? `- MUST include the exact phrase: "${requiredKeyword}"` : ''}
 - Include a clear call-to-action
 - Mention key benefits (elegance, functionality, modern design)

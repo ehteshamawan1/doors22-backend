@@ -13,7 +13,7 @@ const logger = require('../utils/logger');
 const { generatePostId } = require('../utils/helpers');
 
 // Valid categories for content generation
-const VALID_CATEGORIES = ['room_dividers', 'closet_doors', 'home_offices'];
+const VALID_CATEGORIES = ['room_dividers', 'closet_doors', 'home_offices', 'office_partitions'];
 
 /**
  * GET /api/content

@@ -43,11 +43,11 @@ async function run() {
     const results = [];
 
     // Get latest trends for content generation
-    logger.info('Fetching latest trends...');
-    const trendsSnapshot = await db.collection('trends')
-      .orderBy('date', 'desc')
-      .limit(1)
-      .get();
+    logger.info('Fetching latest trends and settings...');
+    const [trendsSnapshot, settingsDoc] = await Promise.all([
+      db.collection('trends').orderBy('date', 'desc').limit(1).get(),
+      db.collection('settings').doc('system_settings').get()
+    ]);
 
     let trendData = null;
     if (!trendsSnapshot.empty) {
@@ -55,6 +55,15 @@ async function run() {
       logger.info(`Using trends from: ${trendData.date}`);
     } else {
       logger.warn('No trends found, using default settings');
+    }
+
+    let systemSettings = settingsDoc.exists ? settingsDoc.data() : {};
+    logger.info(`System Settings: AutoApproval=${systemSettings.autoApproval || false}`);
+
+    // Check if content generation module is enabled
+    if (systemSettings.modules && systemSettings.modules.contentGenerationEnabled === false) {
+      logger.info('Content generation module is disabled in settings. Skipping.');
+      return { success: true, message: 'Module disabled', generated: 0, total: DAILY_CATEGORIES.length };
     }
 
     // Generate content for each category
@@ -65,7 +74,7 @@ async function run() {
       logger.info(`───────────────────────────────────────────────────────────`);
 
       try {
-        const result = await generateForCategory(category, trendData);
+        const result = await generateForCategory(category, trendData, systemSettings);
         results.push(result);
         logger.info(`✓ ${category}: Post created (${result.postId})`);
       } catch (error) {
@@ -129,9 +138,10 @@ async function run() {
  * Generate content for a specific category using Midjourney
  * @param {string} category - Category key
  * @param {Object} trendData - Latest trend analysis data
+ * @param {Object} systemSettings - System configuration settings
  * @returns {Promise<Object>} Generation result
  */
-async function generateForCategory(category, trendData) {
+async function generateForCategory(category, trendData, systemSettings = {}) {
   // Step 1: Get random reference image for this category
   logger.info(`Step 1: Selecting reference image for ${category}...`);
   const imageData = await referenceImagesService.getRandomImage(category);
@@ -142,8 +152,8 @@ async function generateForCategory(category, trendData) {
   const description = buildDescription(imageData);
   logger.info(`Description: ${description}`);
 
-  // Step 2: Determine content type based on trends mix (70% images, 30% videos)
-  const contentMix = trendData?.contentMix || { images: 70, videos: 30 };
+  // Step 2: Determine content type based on settings contentMix (fallback to trends)
+  const contentMix = systemSettings.contentMix || trendData?.contentMix || { images: 70, videos: 30 };
   const random = Math.random() * 100;
   const contentType = random < contentMix.images ? 'image' : 'video';
   logger.info(`Step 2: Content type selected: ${contentType} (random: ${random.toFixed(1)}, threshold: ${contentMix.images})`);
@@ -204,14 +214,15 @@ async function generateForCategory(category, trendData) {
   });
   logger.info(`Uploaded to: ${uploadResult.url}`);
 
-  // Step 6: Generate caption with category-specific keyword
+  // Step 6: Generating caption with category-specific keyword
   logger.info('Step 6: Generating caption...');
   const captionData = await aiEngine.generateCaption({
     type: contentType,
     category: category,
     keyword: imageData.keyword,
     description: description,
-    trendData: trendData
+    trendData: trendData,
+    brandVoice: systemSettings.brandVoice
   });
 
   // Ensure caption includes keyword
@@ -222,8 +233,10 @@ async function generateForCategory(category, trendData) {
   }
   logger.info(`Caption: ${finalCaption.substring(0, 60)}...`);
 
-  // Step 7: Store in Firebase with PENDING status
-  logger.info('Step 7: Storing post in Firebase...');
+  // Step 7: Store in Firebase with PENDING or APPROVED status
+  logger.info(`Step 7: Storing post in Firebase (AutoApproval: ${systemSettings.autoApproval})...`);
+  const postStatus = systemSettings.autoApproval ? 'approved' : 'pending';
+  
   const postData = {
     postId: postId,
     date: new Date().toISOString().split('T')[0],
@@ -253,21 +266,26 @@ async function generateForCategory(category, trendData) {
     cta: captionData.cta || 'Get a free quote at doors22.com/price or call (305) 394-9922',
     generatedAt: new Date().toISOString(),
     createdAt: new Date().toISOString(),
-    status: 'pending',
+    status: postStatus,
     aspectRatio: contentType === 'video' ? '9:16' : '4:5',
     format: uploadResult.format,
     fileSize: uploadResult.fileSize,
     width: uploadResult.width,
     height: uploadResult.height,
     duration: uploadResult.duration || null,
-    approvalHistory: [],
+    approvalHistory: systemSettings.autoApproval ? [{
+      action: 'approved',
+      user: 'system',
+      timestamp: new Date().toISOString(),
+      note: 'Auto-approved by system settings'
+    }] : [],
     editHistory: [],
     scheduledPostTime: null,
     source: 'automated'
   };
 
   const docRef = await db.collection('posts').add(postData);
-  logger.info(`Post created: ${docRef.id} (status: pending)`);
+  logger.info(`Post created: ${docRef.id} (status: ${postStatus})`);
 
   // Log to logs collection
   await db.collection('logs').add({
@@ -286,7 +304,7 @@ async function generateForCategory(category, trendData) {
     category: category,
     keyword: imageData.keyword,
     type: contentType,
-    status: 'pending'
+    status: postStatus
   };
 }
 

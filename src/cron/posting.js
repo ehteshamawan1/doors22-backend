@@ -16,7 +16,52 @@ async function run() {
 
     const startTime = Date.now();
 
-    // Check if Meta API is configured
+    // 1. Fetch system settings to check posting time
+    const settingsDoc = await db.collection('settings').doc('system_settings').get();
+    const systemSettings = settingsDoc.exists ? settingsDoc.data() : { postingTime: '12:00', modules: { autoPostingEnabled: true } };
+    
+    // Check if posting module is enabled
+    if (systemSettings.modules && systemSettings.modules.autoPostingEnabled === false) {
+      logger.info('Auto-posting module is disabled in settings. Skipping.');
+      return {
+        success: true,
+        message: 'Module disabled',
+        posted: 0
+      };
+    }
+
+    const scheduledTime = systemSettings.postingTime || '12:00'; 
+    const [scheduledHour, scheduledMin] = scheduledTime.split(':').map(Number);
+    
+    // Get current time in Eastern Time (matching the dashboard setting)
+    const now = new Date();
+    const etTime = now.toLocaleTimeString('en-US', { 
+      timeZone: 'America/New_York', 
+      hour12: false, 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+    const [currentHour, currentMin] = etTime.split(':').map(Number);
+
+    logger.info(`Current ET Time: ${currentHour}:${currentMin}, Scheduled ET Time: ${scheduledHour}:${scheduledMin}`);
+
+    // If it's not time yet, and this is the periodic check, skip
+    // We allow a 30-minute window for posting
+    const currentTimeInMinutes = currentHour * 60 + currentMin;
+    const scheduledTimeInMinutes = scheduledHour * 60 + scheduledMin;
+    
+    // Check if we are in the posting window (any time after scheduled time today)
+    // This handles posts that were approved earlier in the day
+    if (currentTimeInMinutes < scheduledTimeInMinutes) {
+      logger.info(`Too early to post. Scheduled for ${scheduledTime} UTC.`);
+      return {
+        success: true,
+        message: 'Too early to post',
+        posted: 0
+      };
+    }
+
+    // 2. Check if Meta API is configured
     if (!metaService.isConfigured()) {
       logger.warn('META API NOT CONFIGURED - Check environment variables:');
       logger.warn('  - META_PAGE_ACCESS_TOKEN');
