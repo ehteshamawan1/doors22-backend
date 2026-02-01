@@ -48,9 +48,9 @@ async function createChatCompletion(payload) {
       const isModelError = status === 404 || error?.code === 'model_not_found';
       
       if (isRateLimit) {
-        logger.warn(`Rate limit/Quota hit (429) for model ${model}. Waiting 2s then trying next fallback...`);
-        // Wait 2 seconds to be polite and maybe let the limit reset
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        logger.warn(`Rate limit/Quota hit (429) for model ${model}. Waiting 5s then trying next fallback...`);
+        // Wait 5 seconds to let the limit reset
+        await new Promise(resolve => setTimeout(resolve, 5000));
         continue;
       }
 
