@@ -8,70 +8,111 @@
  * - Comment/DM response generation
  */
 
-const openai = require('../config/openai');
-const { sleep } = require('../utils/helpers'); // Assuming helpers has sleep, if not I'll define it locally or use setTimeout
+const OpenAI = require('openai');
+const defaultClient = require('../config/openai');
 
-// Prioritize environment variables, then fallback to standard stable models
-// We include multiple variations to maximize chances of finding a working model/quota
+// 1. Define available API Keys (Primary + Fallbacks)
+const API_KEYS = [
+  process.env.OPENAI_API_KEY,
+  process.env.OPENAI_API_KEY_FALLBACK,
+  process.env.OPENAI_API_KEY_2
+].filter(key => key && key.trim().length > 0);
+
+const UNIQUE_KEYS = [...new Set(API_KEYS)];
+
+// 2. Define available Models (Env + Standard Fallbacks)
 const MODELS_TO_TRY = [
   process.env.OPENAI_MODEL,
   process.env.OPENAI_FALLBACK_MODEL,
   'gpt-4o',
   'gpt-4o-mini',
   'gpt-4',
-  'gpt-4-turbo-preview', // Alternative to gpt-4-turbo
+  'gpt-4-turbo-preview',
   'gpt-3.5-turbo',
   'gpt-3.5-turbo-0125',
   'gpt-3.5-turbo-1106'
 ].filter(Boolean);
 
-// Deduplicate models
 const UNIQUE_MODELS = [...new Set(MODELS_TO_TRY)];
 
 async function createChatCompletion(payload) {
-  let lastError = null;
+  let collectedErrors = [];
+  
+  // Outer Loop: Iterate through API Keys
+  for (const [keyIndex, apiKey] of UNIQUE_KEYS.entries()) {
+    const keyMask = apiKey ? `...${apiKey.slice(-4)}` : 'unknown';
+    const isDefaultKey = apiKey === process.env.OPENAI_API_KEY;
+    
+    // Use default client if it matches, otherwise create new instance
+    // Disable internal retries (maxRetries: 0) so we can control the loop speed
+    const client = isDefaultKey 
+      ? defaultClient 
+      : new OpenAI({ apiKey, timeout: 60000, maxRetries: 0 });
 
-  for (const model of UNIQUE_MODELS) {
-    try {
-      logger.info(`Attempting OpenAI completion with model: ${model}`);
-      // Remove model from payload if it exists to avoid conflicts, use the loop's model
-      const { model: _, ...restPayload } = payload;
-      
-      return await openai.chat.completions.create({
-        ...restPayload,
-        model: model
-      });
-    } catch (error) {
-      lastError = error;
-      const status = error?.status || error?.response?.status;
-      const isRateLimit = status === 429 || error?.code === 429; // Rate limit OR Quota
-      const isModelError = status === 404 || error?.code === 'model_not_found';
-      
-      if (isRateLimit) {
-        logger.warn(`Rate limit/Quota hit (429) for model ${model}. Waiting 5s then trying next fallback...`);
-        // Wait 5 seconds to let the limit reset
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        continue;
-      }
+    logger.info(`[AI Engine] Using API Key #${keyIndex + 1} (${keyMask})`);
 
-      if (isModelError) {
-         logger.warn(`Model ${model} not found or not accessible (404). Trying next fallback...`);
-         continue;
+    // Inner Loop: Iterate through Models
+    for (const model of UNIQUE_MODELS) {
+      try {
+        logger.info(`[AI Engine] Attempting model: ${model} (Key: ${keyMask})`);
+        
+        // Remove 'model' from payload to prevent conflicts
+        const { model: _, ...restPayload } = payload;
+        
+        const result = await client.chat.completions.create({
+          ...restPayload,
+          model: model
+        });
+        
+        // If successful, return immediately
+        logger.info(`[AI Engine] Success with ${model} (Key: ${keyMask})`);
+        return result;
+
+      } catch (error) {
+        const status = error?.status || error?.response?.status;
+        const code = error?.code;
+        const isRateLimit = status === 429 || code === 429;
+        const isQuota = error?.message?.includes('quota') || error?.message?.includes('billing');
+        const isModelError = status === 404 || code === 'model_not_found';
+
+        const errorMsg = `Failed ${model} (Key: ${keyMask}): ${status || 'unknown'} - ${error.message}`;
+        collectedErrors.push(errorMsg);
+        
+        if (isQuota) {
+          logger.error(`[AI Engine] ⛔ QUOTA EXCEEDED for Key ${keyMask}. Switching keys if available...`);
+          // Break inner loop to try next API KEY immediately (switching models won't help a quota error)
+          break; 
+        }
+
+        if (isRateLimit) {
+          logger.warn(`[AI Engine] ⚠️ Rate Limit (429) for ${model}. Waiting 3s...`);
+          await new Promise(r => setTimeout(r, 3000));
+          continue; // Try next model
+        }
+
+        if (isModelError) {
+          logger.warn(`[AI Engine] ⚠️ Model ${model} not found (404). Skipping.`);
+          continue;
+        }
+
+        // For server errors (5xx), wait briefly and try next model
+        if (status >= 500) {
+          logger.warn(`[AI Engine] ⚠️ Server Error (${status}). Waiting 1s...`);
+          await new Promise(r => setTimeout(r, 1000));
+          continue;
+        }
+
+        // For other errors, log and try next model
+        logger.error(`[AI Engine] ❌ Error: ${error.message}`);
       }
-      
-      // If it's a server error (5xx), we might want to try another model/endpoint
-      if (status >= 500) {
-        logger.warn(`OpenAI server error (${status}) with model ${model}. Trying next fallback...`);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        continue; 
-      }
-      
-      logger.error(`OpenAI error with model ${model}: ${error.message}`);
-      throw error;
     }
   }
 
-  throw lastError;
+  // If we get here, ALL attempts failed
+  logger.error('ALL OpenAI attempts failed. Summary of errors:');
+  collectedErrors.forEach(e => logger.error(e));
+  
+  throw new Error(`AI Generation Failed after trying ${UNIQUE_KEYS.length} keys and ${UNIQUE_MODELS.length} models. Last error: ${collectedErrors.pop()}`);
 }
 const logger = require('../utils/logger');
 const { db } = require('../config/firebase');
