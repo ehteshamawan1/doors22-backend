@@ -10,41 +10,55 @@
 
 const openai = require('../config/openai');
 
-const PRIMARY_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-const FALLBACK_MODELS = [
+// Prioritize environment variables, then fallback to standard stable models
+const MODELS_TO_TRY = [
+  process.env.OPENAI_MODEL,
   process.env.OPENAI_FALLBACK_MODEL,
   'gpt-4o',
-  'gpt-4-turbo',
+  'gpt-4o-mini',
   'gpt-3.5-turbo'
-].filter(Boolean);
+].filter(Boolean); // Remove undefined/null/empty strings
+
+// Deduplicate models to avoid retrying the same one
+const UNIQUE_MODELS = [...new Set(MODELS_TO_TRY)];
 
 async function createChatCompletion(payload) {
-  const models = [PRIMARY_MODEL, ...FALLBACK_MODELS];
   let lastError = null;
 
-  for (const model of models) {
+  for (const model of UNIQUE_MODELS) {
     try {
       logger.info(`Attempting OpenAI completion with model: ${model}`);
+      // Remove model from payload if it exists to avoid conflicts, use the loop's model
+      const { model: _, ...restPayload } = payload;
+      
       return await openai.chat.completions.create({
-        ...payload,
+        ...restPayload,
         model: model
       });
     } catch (error) {
       lastError = error;
       const status = error?.status || error?.response?.status;
       const isRateLimit = status === 429 || error?.code === 429;
+      const isModelError = status === 404 || error?.code === 'model_not_found';
       
       if (isRateLimit) {
         logger.warn(`Rate limit hit for model ${model}. Trying next fallback...`);
-        // Optional: wait a bit?
         continue;
       }
-      
-      // If it's not a rate limit, we might want to fail fast or try another model depending on error
-      logger.error(`OpenAI error with model ${model}: ${error.message}`);
-      if (status >= 500) {
-        continue; // Try next model on server error
+
+      if (isModelError) {
+         logger.warn(`Model ${model} not found or not accessible (404). Trying next fallback...`);
+         continue;
       }
+      
+      // If it's a server error (5xx), we might want to try another model/endpoint
+      if (status >= 500) {
+        logger.warn(`OpenAI server error (${status}) with model ${model}. Trying next fallback...`);
+        continue; 
+      }
+      
+      // For other errors (e.g., 400 Bad Request), failing fast is usually better than retrying with a different model
+      logger.error(`OpenAI error with model ${model}: ${error.message}`);
       throw error;
     }
   }
