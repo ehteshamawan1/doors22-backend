@@ -9,17 +9,23 @@
  */
 
 const openai = require('../config/openai');
+const { sleep } = require('../utils/helpers'); // Assuming helpers has sleep, if not I'll define it locally or use setTimeout
 
 // Prioritize environment variables, then fallback to standard stable models
+// We include multiple variations to maximize chances of finding a working model/quota
 const MODELS_TO_TRY = [
   process.env.OPENAI_MODEL,
   process.env.OPENAI_FALLBACK_MODEL,
   'gpt-4o',
   'gpt-4o-mini',
-  'gpt-3.5-turbo'
-].filter(Boolean); // Remove undefined/null/empty strings
+  'gpt-4',
+  'gpt-4-turbo-preview', // Alternative to gpt-4-turbo
+  'gpt-3.5-turbo',
+  'gpt-3.5-turbo-0125',
+  'gpt-3.5-turbo-1106'
+].filter(Boolean);
 
-// Deduplicate models to avoid retrying the same one
+// Deduplicate models
 const UNIQUE_MODELS = [...new Set(MODELS_TO_TRY)];
 
 async function createChatCompletion(payload) {
@@ -38,11 +44,13 @@ async function createChatCompletion(payload) {
     } catch (error) {
       lastError = error;
       const status = error?.status || error?.response?.status;
-      const isRateLimit = status === 429 || error?.code === 429;
+      const isRateLimit = status === 429 || error?.code === 429; // Rate limit OR Quota
       const isModelError = status === 404 || error?.code === 'model_not_found';
       
       if (isRateLimit) {
-        logger.warn(`Rate limit hit for model ${model}. Trying next fallback...`);
+        logger.warn(`Rate limit/Quota hit (429) for model ${model}. Waiting 2s then trying next fallback...`);
+        // Wait 2 seconds to be polite and maybe let the limit reset
+        await new Promise(resolve => setTimeout(resolve, 2000));
         continue;
       }
 
@@ -54,10 +62,10 @@ async function createChatCompletion(payload) {
       // If it's a server error (5xx), we might want to try another model/endpoint
       if (status >= 500) {
         logger.warn(`OpenAI server error (${status}) with model ${model}. Trying next fallback...`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
         continue; 
       }
       
-      // For other errors (e.g., 400 Bad Request), failing fast is usually better than retrying with a different model
       logger.error(`OpenAI error with model ${model}: ${error.message}`);
       throw error;
     }
