@@ -10,6 +10,7 @@ class MetaService {
   constructor() {
     this.apiVersion = 'v21.0';
     this.baseUrl = `https://graph.facebook.com/${this.apiVersion}`;
+    this.pageTokenCache = null;
   }
 
   /**
@@ -54,6 +55,50 @@ class MetaService {
       pageId: config.pageId ? `${config.pageId.substring(0, 6)}...` : null,
       igUserId: config.igUserId ? `${config.igUserId.substring(0, 6)}...` : null
     };
+  }
+
+  async getFacebookPageAccessToken() {
+    const config = this.getConfig();
+
+    if (!config.accessToken || !config.pageId) {
+      throw new Error('Meta API not configured. Missing access token or page ID.');
+    }
+
+    const cached = this.pageTokenCache;
+    if (
+      cached &&
+      cached.sourceToken === config.accessToken &&
+      cached.pageId === config.pageId &&
+      cached.expiresAt > Date.now()
+    ) {
+      return cached.token;
+    }
+
+    const response = await axios.get(`${this.baseUrl}/me/accounts`, {
+      params: {
+        access_token: config.accessToken
+      }
+    });
+
+    const pages = response.data?.data || [];
+    const page = pages.find((item) => item.id === config.pageId);
+
+    if (!page?.access_token) {
+      throw new Error(`Unable to resolve Facebook Page access token for page ${config.pageId}`);
+    }
+
+    this.pageTokenCache = {
+      token: page.access_token,
+      pageId: config.pageId,
+      sourceToken: config.accessToken,
+      expiresAt: Date.now() + (30 * 60 * 1000)
+    };
+
+    logger.info('Resolved Facebook Page access token from user token', {
+      pageId: `${config.pageId.substring(0, 6)}...`
+    });
+
+    return page.access_token;
   }
 
   /**
@@ -269,6 +314,7 @@ class MetaService {
     }
 
     try {
+      const pageAccessToken = await this.getFacebookPageAccessToken();
       let response;
 
       if (mediaType === 'video') {
@@ -283,7 +329,7 @@ class MetaService {
             params: {
               file_url: mediaUrl,
               description: caption,
-              access_token: config.accessToken
+              access_token: pageAccessToken
             }
           }
         );
@@ -301,7 +347,7 @@ class MetaService {
               url: mediaUrl,
               message: caption,  // Changed from 'caption' to 'message' - correct parameter name
               published: true,
-              access_token: config.accessToken
+              access_token: pageAccessToken
             }
           }
         );
