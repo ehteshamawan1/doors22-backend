@@ -74,31 +74,50 @@ class MetaService {
       return cached.token;
     }
 
-    const response = await axios.get(`${this.baseUrl}/me/accounts`, {
+    // If the configured token is already a Page access token, use it directly
+    const meResponse = await axios.get(`${this.baseUrl}/me`, {
       params: {
+        fields: 'id',
         access_token: config.accessToken
       }
     });
 
-    const pages = response.data?.data || [];
-    const page = pages.find((item) => item.id === config.pageId);
+    let pageToken;
 
-    if (!page?.access_token) {
-      throw new Error(`Unable to resolve Facebook Page access token for page ${config.pageId}`);
+    if (meResponse.data?.id === config.pageId) {
+      pageToken = config.accessToken;
+      logger.info('Configured Meta token is a Page access token, using it directly', {
+        pageId: `${config.pageId.substring(0, 6)}...`
+      });
+    } else {
+      // Token belongs to a user - resolve the Page token via /me/accounts
+      const response = await axios.get(`${this.baseUrl}/me/accounts`, {
+        params: {
+          access_token: config.accessToken
+        }
+      });
+
+      const pages = response.data?.data || [];
+      const page = pages.find((item) => item.id === config.pageId);
+
+      if (!page?.access_token) {
+        throw new Error(`Unable to resolve Facebook Page access token for page ${config.pageId}`);
+      }
+
+      pageToken = page.access_token;
+      logger.info('Resolved Facebook Page access token from user token', {
+        pageId: `${config.pageId.substring(0, 6)}...`
+      });
     }
 
     this.pageTokenCache = {
-      token: page.access_token,
+      token: pageToken,
       pageId: config.pageId,
       sourceToken: config.accessToken,
       expiresAt: Date.now() + (30 * 60 * 1000)
     };
 
-    logger.info('Resolved Facebook Page access token from user token', {
-      pageId: `${config.pageId.substring(0, 6)}...`
-    });
-
-    return page.access_token;
+    return pageToken;
   }
 
   /**
